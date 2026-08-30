@@ -30,7 +30,17 @@ rem Publish the engine where the desktop app looks for it.
 set "ENGINE_OUT=%PHOTOY_ROOT%\apps\desktop\resources\engine"
 if not exist "%ENGINE_OUT%" mkdir "%ENGINE_OUT%"
 copy /y "%BUILD_DIR%\bin\photoy-engine.exe" "%ENGINE_OUT%\photoy-engine.exe" >nul
-if errorlevel 1 exit /b 1
+if errorlevel 1 (
+  rem The published binary is held open while the app is running, and the copy
+  rem fails with a message that says nothing about why.
+  tasklist /fi "imagename eq photoy-engine.exe" 2>nul | find /i "photoy-engine.exe" >nul
+  if not errorlevel 1 (
+    echo [photoy] the engine is running - close the app and build again.
+  ) else (
+    echo [photoy] could not publish the engine to %ENGINE_OUT%.
+  )
+  exit /b 1
+)
 
 echo [photoy] engine built: %ENGINE_OUT%\photoy-engine.exe
 exit /b 0

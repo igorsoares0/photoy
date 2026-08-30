@@ -181,10 +181,49 @@ Operation ParseOperation(const json& params) {
   throw EngineException(error_code::kInvalidRequest, "Unknown operation", kind);
 }
 
+/**
+ * What a job expects to hold at its peak.
+ *
+ * Erring high is the cheap mistake: a job that overstates waits a little longer
+ * for its turn, while one that understates gets admitted alongside another and
+ * the process runs out of memory.
+ */
+namespace estimate {
+
+/// Working buffers are 16-bit RGBA; output buffers are 8-bit.
+constexpr std::uint64_t kWorkingBytesPerPixel = 8;
+constexpr std::uint64_t kOutputBytesPerPixel = 4;
+
+std::uint64_t Pixels(std::uint64_t width, std::uint64_t height) { return width * height; }
+
+/**
+ * Opening cannot be measured before the header is read, so this is a guess from
+ * the file size with a floor under it. Compression ratios vary by an order of
+ * magnitude between a flat PNG and a dense JPEG; the multiplier assumes the
+ * dense end.
+ */
+std::uint64_t Open(std::uint64_t file_size) {
+  return std::max<std::uint64_t>(256ull * 1024 * 1024, file_size * 24);
+}
+
+/// A preview holds the geometry result, an intermediate, and the output.
+std::uint64_t Preview(std::uint64_t width, std::uint64_t height) {
+  return Pixels(width, height) * (2 * kWorkingBytesPerPixel + kOutputBytesPerPixel);
+}
+
+/// An export holds the full-resolution render, the converted output, and the
+/// encoded bytes before they reach the disk.
+std::uint64_t Export(std::uint64_t width, std::uint64_t height) {
+  return Pixels(width, height) *
+         (kWorkingBytesPerPixel + 2 * kOutputBytesPerPixel + kOutputBytesPerPixel);
+}
+
+}  // namespace estimate
+
 }  // namespace
 
 Engine::Engine(protocol::StdioTransport& transport)
-    : transport_(transport), jobs_(DefaultWorkerCount()) {}
+    : transport_(transport), jobs_(DefaultWorkerCount(), DefaultMemoryBudget()) {}
 
 Engine::~Engine() { Shutdown(); }
 
@@ -230,7 +269,7 @@ void Engine::Dispatch(const nlohmann::json& header) {
     return transport_.Write(MakeFailure(id, error_code::kInvalidRequest, "Unknown method", method));
   }
 
-  jobs_.Submit(static_cast<std::uint64_t>(id), coalesce_key,
+  jobs_.Submit(static_cast<std::uint64_t>(id), coalesce_key, EstimateMemory(method, params),
                [this, id, method, params](const CancellationTokenPtr& token) {
                  protocol::Frame response;
                  try {
@@ -268,7 +307,38 @@ void Engine::Dispatch(const nlohmann::json& header) {
                });
 }
 
+/**
+ * Sizes a job before it is queued.
+ *
+ * Done here rather than inside the queue because only this layer knows how big
+ * the document is, and the answer differs by three orders of magnitude between
+ * a preview and an inference.
+ */
+std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::json& params) const {
+  try {
+    if (method == "image.open") {
+      const std::string path = RequireString(params, "path");
+      return estimate::Open(paths::FileSize(path));
+    }
+    const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+    if (method == "image.export") {
+      return estimate::Export(static_cast<std::uint64_t>(document->source.width()),
+                              static_cast<std::uint64_t>(document->source.height()));
+    }
+    const auto width = static_cast<std::uint64_t>(
+        OptionalInt(params, "maxWidth", document->source.width()));
+    const auto height = static_cast<std::uint64_t>(
+        OptionalInt(params, "maxHeight", document->source.height()));
+    return estimate::Preview(width, height);
+  } catch (const std::exception&) {
+    // A request that cannot be sized is a request that is about to fail with a
+    // proper error; let it through rather than block the queue on it.
+    return 0;
+  }
+}
+
 nlohmann::json Engine::Describe() const {
+  const JobQueueStats stats = jobs_.Stats();
   return json{{"name", kEngineName},
               {"version", kEngineVersion},
               {"protocolVersion", protocol::kProtocolVersion},
@@ -278,7 +348,12 @@ nlohmann::json Engine::Describe() const {
               {"operations",
                json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "adjust"})},
               {"workingSpace", "linear-prophoto-16"},
-              {"workers", DefaultWorkerCount()}};
+              {"jobs",
+               json{{"workers", stats.workers},
+                    {"budgetBytes", stats.budget_bytes},
+                    {"admittedBytes", stats.admitted_bytes},
+                    {"peakAdmittedBytes", stats.peak_admitted_bytes},
+                    {"peakConcurrentJobs", stats.peak_concurrent_jobs}}}};
 }
 
 nlohmann::json Engine::CloseImage(const json& params) {

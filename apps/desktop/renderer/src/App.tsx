@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from './store/editor';
 import { AdjustmentsPanel } from './components/AdjustmentsPanel';
 import { Canvas } from './components/Canvas';
+import { CropOverlay } from './components/CropOverlay';
 import { EmptyState } from './components/EmptyState';
 import { ExportDialog } from './components/ExportDialog';
 import { Notices } from './components/Notices';
@@ -25,6 +26,10 @@ export function App(): React.JSX.Element {
   const undo = useEditor((state) => state.undo);
   const redo = useEditor((state) => state.redo);
   const applyEdit = useEditor((state) => state.applyEdit);
+  const cropping = useEditor((state) => state.cropRect !== null);
+  const beginCrop = useEditor((state) => state.beginCrop);
+  const confirmCrop = useEditor((state) => state.confirmCrop);
+  const cancelCrop = useEditor((state) => state.cancelCrop);
 
   useEffect(() => {
     const stopState = window.photoy.onEngineStateChanged(setEngineState);
@@ -63,6 +68,26 @@ export function App(): React.JSX.Element {
         return;
       }
       if (document === null) return;
+
+      // While the crop tool is open it owns Enter and Escape: the frame is a
+      // pending decision, and those are the two answers to it.
+      if (cropping) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void confirmCrop();
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelCrop();
+          return;
+        }
+      }
+      if (!accel && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        cropping ? cancelCrop() : beginCrop();
+        return;
+      }
       if (accel && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         // Shift turns undo into redo, which is what every editor on this
@@ -101,7 +126,20 @@ export function App(): React.JSX.Element {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [document, openDialog, fit, setViewport, zoomAt, undo, redo, applyEdit]);
+  }, [
+    document,
+    openDialog,
+    fit,
+    setViewport,
+    zoomAt,
+    undo,
+    redo,
+    applyEdit,
+    cropping,
+    beginCrop,
+    confirmCrop,
+    cancelCrop,
+  ]);
 
   // Drag and drop. The path is resolved in the preload and re-validated in the
   // main process before it ever reaches the engine.
@@ -136,6 +174,7 @@ export function App(): React.JSX.Element {
         <ToolRail />
         <div ref={stageRef} className="relative flex min-h-0 min-w-0 flex-1">
           <Canvas />
+          <CropOverlay container={stageRef} />
           {document === null ? (
             <EmptyState dragging={dragging} />
           ) : (

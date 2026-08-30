@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   AdjustmentKey,
   Adjustments,
+  Rect,
   DocumentInfo,
   EditHistory,
   ExportRequest,
@@ -56,6 +57,15 @@ interface EditorState {
   history: EditHistory | null;
   /** What the sliders show while the engine catches up with a drag. */
   pendingAdjustments: Adjustments | null;
+  /**
+   * The crop being composed, in document coordinates, or null when the tool is
+   * not active. Nothing is applied until it is confirmed: framing is a decision,
+   * and the stack should record the decision, not every rectangle tried on the
+   * way to it.
+   */
+  cropRect: Rect | null;
+  /** Width over height the crop is locked to, or null for a free rectangle. */
+  cropAspect: number | null;
   preview: PreviewState | null;
   viewport: Viewport;
   busy: Busy;
@@ -76,6 +86,13 @@ interface EditorState {
   requestPreview(targetWidth: number, targetHeight: number): Promise<void>;
 
   applyEdit(operation: Operation): Promise<void>;
+
+  beginCrop(): void;
+  setCropRect(rect: Rect): void;
+  setCropAspect(aspect: number | null): void;
+  confirmCrop(): Promise<void>;
+  cancelCrop(): void;
+
   /**
    * Moves one slider. `continuing` is true for every frame of a drag after the
    * first, which is what makes the gesture a single undo step.
@@ -168,6 +185,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   document: null,
   history: null,
   pendingAdjustments: null,
+  cropRect: null,
+  cropAspect: null,
   preview: null,
   viewport: INITIAL_VIEWPORT,
   busy: null,
@@ -194,6 +213,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       document: response.value,
       history: null,
       pendingAdjustments: null,
+      cropRect: null,
       preview: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
@@ -212,6 +232,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       document: response.value,
       history: null,
       pendingAdjustments: null,
+      cropRect: null,
       preview: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
@@ -226,6 +247,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       document: null,
       history: null,
       pendingAdjustments: null,
+      cropRect: null,
       preview: null,
       lastExport: null,
     });
@@ -311,6 +333,35 @@ export const useEditor = create<EditorState>((set, get) => ({
     const document = get().document;
     if (document === null) return;
     await adoptHistory(set, get, await window.photoy.applyEdit(document.id, operation));
+  },
+
+  beginCrop: () => {
+    const size = renderedSize(get());
+    if (size === null) return;
+    set({ cropRect: { x: 0, y: 0, width: size.width, height: size.height }, cropAspect: null });
+  },
+
+  setCropRect: (cropRect) => set({ cropRect }),
+  setCropAspect: (cropAspect) => set({ cropAspect }),
+  cancelCrop: () => set({ cropRect: null, cropAspect: null }),
+
+  confirmCrop: async () => {
+    const { document, cropRect } = get();
+    const size = renderedSize(get());
+    if (document === null || cropRect === null || size === null) return;
+
+    // A crop that changes nothing is not worth a history entry.
+    const whole =
+      cropRect.x === 0 && cropRect.y === 0 && cropRect.width === size.width &&
+      cropRect.height === size.height;
+    set({ cropRect: null, cropAspect: null });
+    if (whole) return;
+
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'crop', rect: cropRect }),
+    );
   },
 
   setAdjustment: async (key, value, continuing) => {

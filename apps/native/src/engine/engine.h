@@ -55,6 +55,7 @@ class Engine {
                               const CancellationTokenPtr& token);
 
   void EmitJobState(std::int64_t id, const char* state) const;
+  std::uint64_t EstimateMemory(const std::string& method, const nlohmann::json& params) const;
 
   protocol::StdioTransport& transport_;
   DocumentStore documents_;

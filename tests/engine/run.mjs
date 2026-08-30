@@ -3,9 +3,12 @@ import { run as runPipeline } from './smoke.mjs';
 import { run as runColour } from './color.mjs';
 import { run as runEdits } from './edits.mjs';
 import { run as runAdjustments } from './adjustments.mjs';
+import { run as runJobs } from './jobs.mjs';
+import { run as runGeometry } from '../renderer/viewport.mjs';
 
 /**
- * Runs the engine suites against the real binary over the real protocol.
+ * Runs the engine suites against the real binary over the real protocol, plus
+ * the renderer's pure geometry.
  *
  * Fixtures are written first so a checkout with no generated images still runs,
  * and the suites share one process so a failure in either sets the exit code.
@@ -13,7 +16,7 @@ import { run as runAdjustments } from './adjustments.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runJobs, runGeometry]) {
   failures += await suite();
 }
 

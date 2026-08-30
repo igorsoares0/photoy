@@ -16,5 +16,11 @@ apps/desktop/resources/engine/
 # Test fixtures are written by tests/fixtures/generate.mjs.
 tests/fixtures/*.png
 
+# Spike build artefacts. The source and the findings are kept; the binaries,
+# the runtime DLLs and the model files are not.
+spikes/**/*.exe
+spikes/**/*.obj
+spikes/**/*.dll
+
 .vscode/
 .DS_Store

@@ -1,6 +1,7 @@
 import type { AdjustmentKey } from '@photoy/types';
 import { currentAdjustments, useEditor } from '../store/editor';
 import { formatSigned } from '../lib/format';
+import { CropPanel } from './CropPanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
 
@@ -69,8 +70,16 @@ function Group({ label, controls }: { label: string; controls: Control[] }): Rea
   );
 }
 
+/**
+ * The side panel.
+ *
+ * The crop tool takes the panel over while it is active: a mode with its own
+ * decisions to make deserves the space, and leaving the sliders visible would
+ * invite changes that the pending crop is not yet committed to.
+ */
 export function AdjustmentsPanel(): React.JSX.Element {
   const document = useEditor((state) => state.document);
+  const cropping = useEditor((state) => state.cropRect !== null);
   const values = useEditor(currentAdjustments);
   const resetAdjustments = useEditor((state) => state.resetAdjustments);
   const touched = Object.values(values).some((value) => value !== 0);
@@ -84,7 +93,9 @@ export function AdjustmentsPanel(): React.JSX.Element {
         borderLeft: '1px solid var(--border-hairline)',
       }}
     >
-      {document === null ? (
+      {cropping ? (
+        <CropPanel />
+      ) : document === null ? (
         <div className="flex flex-1 items-center justify-center" style={{ padding: 'var(--pad-panel)' }}>
           <span style={{ fontSize: 'var(--text-chip)', color: 'var(--fg-numeric-idle)' }}>
             Abra uma foto para ajustar

@@ -4,10 +4,10 @@ Editor de fotos desktop local-first. Especificação completa em
 [`docs/photo-editor-spec-driven-development.md`](docs/photo-editor-spec-driven-development.md);
 o sistema visual em [`docs/style-guide.html`](docs/style-guide.html).
 
-**Estado: Milestone 1 completo**, mais gerenciamento de cor, a pilha de edições
-não destrutiva com fila de jobs, e os ajustes básicos. Abrir, decodificar,
-gerenciar cor, canvas, zoom, pan, girar, espelhar, recortar, ajustar luz e cor,
-desfazer/refazer e exportar.
+**Estado: Milestone 1 completo e Milestone 2 em 10 de 11**, mais gerenciamento de
+cor e a pilha de edições não destrutiva com fila de jobs. Abrir, decodificar,
+gerenciar cor, canvas, zoom, pan, girar, espelhar, recortar com alças e
+proporções, ajustar luz e cor, desfazer/refazer e exportar.
 
 ## Convenções
 
@@ -109,6 +109,12 @@ não existe versão divergente entre o main process e o renderer.
 - **Recorte é expresso no que o usuário vê.** O retângulo chega em coordenadas já giradas e
   é mapeado de volta pela orientação acumulada. O contrário obrigaria a UI a conhecer a
   álgebra da pilha.
+- **Recorte só entra na pilha quando confirmado.** Enquadrar é uma decisão; o histórico
+  registra a decisão, não cada retângulo tentado no caminho até ela. `Enter` aplica, `Esc`
+  desiste, e a ferramenta toma o painel enquanto está aberta.
+- **Uma proporção travada encolhe para caber, nunca cresce.** Crescer para o candidato maior
+  é desfeito pelo clamp aos limites do documento — que é como uma proporção travada deixa de
+  ser respeitada em silêncio.
 - **Um render cancelado não é um erro.** A UI ignora `cancelled` em silêncio: é a fila
   funcionando, não uma falha que o usuário precise ler.
 - **Os ajustes vão fundidos na conversão de saída**, não numa passada própria. Uma passada
@@ -154,12 +160,27 @@ Milestone 2 em diante. Consequências visíveis hoje:
   do preview pelo pipe. Dá ~32 fps. Baixar a resolução do preview durante o arrasto e subir
   ao soltar é o próximo ganho fácil, e a API já aceita isso sem mudança.
 - **Faltam os ajustes que a §9 lista além destes**: matiz, vibração, nitidez, clareza,
-  vinheta e grão. E `resize`, que o M2 pede.
+  vinheta e grão. E `resize`, o único item do M2 ainda em aberto.
 - **Jobs reportam estado, não porcentagem.** `queued → running → completed/cancelled/failed`
   chega como evento, mas nenhuma operação de hoje sabe reportar uma fração real, e o style
   guide proíbe inventar uma. As porcentagens entram junto com as operações que sabem medi-las.
-- **Recorte existe no engine, mas ainda não na UI.** A ferramenta com alças no canvas vem
-  junto do painel lateral. Pela API e pelos testes o recorte já funciona.
+- **Os documentos residentes ficam fora do orçamento de jobs.** Uma foto de 24 MP ocupa
+  192 MB enquanto estiver aberta, e nada contabiliza isso. Hoje a UI segura um documento por
+  vez, então não incomoda; abrir vários exige estender o orçamento para cobri-los.
+- **A estimativa de abertura é um chute com piso**, porque o tamanho real só se conhece
+  depois de ler o cabeçalho. Erra para cima de propósito: um job que superestima espera um
+  pouco mais pela vez dele, um que subestima é admitido junto de outro e falta memória.
+
+## Espinhos
+
+`spikes/` guarda investigações fora do build do produto. O que volta delas é
+conhecimento, não código.
+
+- **`spikes/ai`** — inferência local com ONNX Runtime. Responde se o runtime roda
+  nesta stack, quanto custa, e que forma tem a máscara que sai. Resumo dos
+  números no README de lá. Três conclusões mudam o plano: a inferência **não**
+  escala com megapixels, memória é a restrição real (~1 GB numa foto grande), e a
+  máscara é alfa contínuo — o que confirma o desenho de `Mask` da §16.
 
 ## Layout
 
@@ -183,5 +204,6 @@ packages/
   types/      tipos de domínio compartilhados
   ipc/        protocolo do engine, canais e a API exposta ao renderer
 
-tests/engine/ suítes que falam o protocolo real com o binário real
+tests/engine/   suítes que falam o protocolo real com o binário real
+tests/renderer/ geometria pura do renderer, importada direto do TypeScript
 ```

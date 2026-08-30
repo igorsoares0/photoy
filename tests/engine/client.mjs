@@ -17,8 +17,12 @@ export class EngineClient {
   /** Unsolicited frames, kept so tests can assert on job lifecycle events. */
   events = [];
 
-  constructor(executablePath) {
-    this.#child = spawn(executablePath, [], { stdio: ['pipe', 'pipe', 'inherit'] });
+  /** `env` overrides let a test pin engine settings, such as the job budget. */
+  constructor(executablePath, env = {}) {
+    this.#child = spawn(executablePath, [], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, ...env },
+    });
     this.#child.stdout.on('data', (chunk) => this.#onData(chunk));
   }
 

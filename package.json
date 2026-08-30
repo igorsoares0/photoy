@@ -17,8 +17,8 @@
     "dev": "npm run dev --workspace @photoy/desktop",
     "start": "npm run start --workspace @photoy/desktop",
     "typecheck": "tsc -b packages/types packages/ipc && tsc --noEmit -p apps/desktop/tsconfig.json",
-    "test": "node tests/engine/run.mjs",
-    "test:engine": "node tests/engine/run.mjs"
+    "test": "node --experimental-strip-types --no-warnings tests/engine/run.mjs",
+    "test:engine": "node --experimental-strip-types --no-warnings tests/engine/run.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.2"

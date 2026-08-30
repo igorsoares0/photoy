@@ -1,21 +1,43 @@
 #include "jobs/job_queue.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <utility>
 
 #include "core/log.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace photoy {
 namespace {
 
-CancellationTokenPtr MakeNeverCancelled() {
-  return std::make_shared<CancellationToken>();
+/// Share of physical memory the queue will commit to running jobs. The rest is
+/// left for the documents held resident, the renderer, and the operating system.
+constexpr double kBudgetShare = 0.35;
+constexpr std::uint64_t kMinimumBudget = 256ull * 1024 * 1024;
+
+std::uint64_t PhysicalMemoryBytes() noexcept {
+#ifdef _WIN32
+  MEMORYSTATUSEX status{};
+  status.dwLength = sizeof(status);
+  if (GlobalMemoryStatusEx(&status) == 0) return 0;
+  return status.ullTotalPhys;
+#else
+  const long pages = ::sysconf(_SC_PHYS_PAGES);
+  const long page_size = ::sysconf(_SC_PAGE_SIZE);
+  if (pages <= 0 || page_size <= 0) return 0;
+  return static_cast<std::uint64_t>(pages) * static_cast<std::uint64_t>(page_size);
+#endif
 }
 
 }  // namespace
 
 CancellationTokenPtr NeverCancelled() {
-  static const CancellationTokenPtr token = MakeNeverCancelled();
+  static const CancellationTokenPtr token = std::make_shared<CancellationToken>();
   return token;
 }
 
@@ -25,12 +47,24 @@ unsigned DefaultWorkerCount() noexcept {
   return std::min(4u, hardware - 1);
 }
 
-JobQueue::JobQueue(unsigned worker_count) {
+std::uint64_t DefaultMemoryBudget() noexcept {
+  if (const char* raw = std::getenv("PHOTOY_JOB_MEMORY_BUDGET_MB")) {
+    const long long megabytes = std::atoll(raw);
+    if (megabytes > 0) return static_cast<std::uint64_t>(megabytes) * 1024 * 1024;
+  }
+  const std::uint64_t physical = PhysicalMemoryBytes();
+  if (physical == 0) return kMinimumBudget;
+  return std::max(kMinimumBudget, static_cast<std::uint64_t>(physical * kBudgetShare));
+}
+
+JobQueue::JobQueue(unsigned worker_count, std::uint64_t budget_bytes)
+    : budget_bytes_(budget_bytes) {
   workers_.reserve(worker_count);
   for (unsigned i = 0; i < worker_count; ++i) {
     workers_.emplace_back([this] { Work(); });
   }
-  log::Info("job queue started with " + std::to_string(worker_count) + " worker(s)");
+  log::Info("job queue started with " + std::to_string(worker_count) + " worker(s), budget " +
+            std::to_string(budget_bytes / (1024 * 1024)) + " MB");
 }
 
 JobQueue::~JobQueue() { Shutdown(); }
@@ -44,10 +78,12 @@ void JobQueue::CancelKeyLocked(const std::string& key) {
   }
 }
 
-void JobQueue::Submit(std::uint64_t id, std::string coalesce_key, Task task) {
+void JobQueue::Submit(std::uint64_t id, std::string coalesce_key, std::uint64_t memory_estimate,
+                      Task task) {
   Entry entry;
   entry.id = id;
   entry.coalesce_key = std::move(coalesce_key);
+  entry.memory_estimate = memory_estimate;
   entry.task = std::move(task);
   entry.token = std::make_shared<CancellationToken>();
 
@@ -73,24 +109,67 @@ bool JobQueue::Cancel(std::uint64_t id) {
   return true;
 }
 
+JobQueueStats JobQueue::Stats() const {
+  const std::lock_guard<std::mutex> lock(mutex_);
+  return JobQueueStats{budget_bytes_,          admitted_bytes_,
+                       peak_admitted_bytes_,   peak_concurrent_jobs_,
+                       static_cast<unsigned>(workers_.size())};
+}
+
+bool JobQueue::TakeRunnableLocked(Entry& entry) {
+  for (auto it = pending_.begin(); it != pending_.end(); ++it) {
+    // A cancelled job allocates nothing: it exists only to report back, so the
+    // budget must not stand in the way of it doing so.
+    const bool free_of_charge = it->token->cancelled();
+    const bool fits = admitted_bytes_ + it->memory_estimate <= budget_bytes_;
+    // Nothing running means this job has the whole machine. It is admitted even
+    // if it does not fit, because refusing it would hang forever - a job larger
+    // than the entire budget still has to run sometime.
+    const bool alone = running_ == 0 && it == pending_.begin();
+
+    if (!free_of_charge && !fits && !alone) continue;
+
+    entry = std::move(*it);
+    pending_.erase(it);
+    entry.charged = !free_of_charge;
+    if (entry.charged) {
+      admitted_bytes_ += entry.memory_estimate;
+      peak_admitted_bytes_ = std::max(peak_admitted_bytes_, admitted_bytes_);
+    }
+    ++running_;
+    peak_concurrent_jobs_ = std::max(peak_concurrent_jobs_, running_);
+    return true;
+  }
+  return false;
+}
+
 void JobQueue::Work() {
   for (;;) {
     Entry entry;
+    bool took = false;
     {
       std::unique_lock<std::mutex> lock(mutex_);
-      ready_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
-      if (pending_.empty()) return;  // only reached while stopping
-      entry = std::move(pending_.front());
-      pending_.pop_front();
+      ready_.wait(lock, [this, &entry, &took] {
+        if (stopping_ && pending_.empty()) return true;
+        took = TakeRunnableLocked(entry);
+        return took;
+      });
+      if (!took) return;  // only reached while stopping with nothing left
     }
 
     entry.task(entry.token);
 
     {
       const std::lock_guard<std::mutex> lock(mutex_);
+      if (entry.charged && admitted_bytes_ >= entry.memory_estimate) {
+        admitted_bytes_ -= entry.memory_estimate;
+      }
+      --running_;
       live_.erase(entry.id);
       keys_.erase(entry.id);
     }
+    // Freeing budget may unblock more than one waiter.
+    ready_.notify_all();
   }
 }
 
