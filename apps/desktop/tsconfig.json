@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@photoy/types": ["../../packages/types/src/index.ts"],
+      "@photoy/ipc": ["../../packages/ipc/src/index.ts"]
+    }
+  },
+  "include": ["electron", "renderer/src", "vite.config.ts"]
+}

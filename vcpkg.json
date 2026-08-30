@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "photoy",
+  "version": "0.1.0",
+  "description": "Photoy native image engine dependencies",
+  "builtin-baseline": "abb6dda5cc32914d2e64d7d72b974dc301d1fc8a",
+  "dependencies": [
+    "lcms",
+    "libjpeg-turbo",
+    "libpng",
+    {
+      "name": "tiff",
+      "default-features": false,
+      "features": [
+        "zip"
+      ]
+    },
+    "libwebp",
+    "nlohmann-json"
+  ]
+}

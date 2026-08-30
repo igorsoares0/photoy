@@ -1,0 +1,26 @@
+{
+  "name": "photoy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Photoy - local-first desktop photo editor",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "setup": "scripts\\setup-windows.bat",
+    "build:native": "scripts\\build-native.bat Release",
+    "build:native:debug": "scripts\\build-native.bat Debug",
+    "build:ts": "npm run build --workspaces --if-present",
+    "build": "npm run build:native && npm run build:ts",
+    "dev": "npm run dev --workspace @photoy/desktop",
+    "start": "npm run start --workspace @photoy/desktop",
+    "typecheck": "tsc -b packages/types packages/ipc && tsc --noEmit -p apps/desktop/tsconfig.json",
+    "test": "node tests/engine/run.mjs",
+    "test:engine": "node tests/engine/run.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

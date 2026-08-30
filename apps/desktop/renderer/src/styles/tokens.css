@@ -1,0 +1,135 @@
+/**
+ * Aperture design tokens.
+ *
+ * Transcribed from docs/style-guide.html, which is the source of truth. The
+ * guide ships without its styles.css, so the surface and border hexes come from
+ * its own token table and the remaining values from the specimens it renders.
+ *
+ * One deviation, deliberate: the guide uses --text-body for both a 12px size
+ * and a prose colour. Sizes keep the documented --text-* names, and text
+ * colours are --fg-*, so no token means two things.
+ */
+:root {
+  /* Neutral ramp - deliberately hueless, #070708 to #EDEDEF */
+  --gray-1000: #070708;
+  --gray-960: #0a0a0b;
+  --gray-940: #0d0d0f;
+  --gray-900: #141417;
+  --gray-860: #1b1b1f;
+  --gray-780: #26262b;
+  --gray-700: #33333a;
+  --gray-600: #4e4e57;
+  --gray-400: #85858f;
+  --gray-200: #b4b4bc;
+  --gray-050: #ededef;
+
+  /* Surfaces - at most two backgrounds per screen: chrome and canvas */
+  --surface-app: #0a0a0b;
+  --surface-chrome: #0d0d0f;
+  --surface-canvas-matte: #121214;
+  --surface-canvas-bleed: #0a0a0b;
+  --surface-canvas-framed: #17171a;
+  --surface-raised: #101013;
+  --surface-hover: #17171a;
+  --surface-active: #1d1d22;
+
+  /* Borders - the 1px hairline is the primary structural device */
+  --border-hairline: #1b1b1f;
+  --border-quiet: #212126;
+  --border-subtle: #26262b;
+  --border-hover: #33333a;
+
+  /* Text */
+  --fg-primary: #ededef;
+  --fg-body: #dcdce0;
+  --fg-secondary: #b4b4bc;
+  --fg-muted: #85858f;
+  --fg-faint: #6a6a73;
+  --fg-ghost: #5a5a63;
+  --fg-numeric-idle: #4e4e57;
+  --fg-on-solid: #0a0a0b;
+  --fg-on-accent: #0a0a0b;
+
+  /* Accent - violet means a model touched this, and nothing else */
+  --accent: #a78bfa;
+  --accent-hover: #c4b2fd;
+  --accent-text: #c4b2fd;
+  --accent-text-dim: #a78bfa;
+  --accent-border: #2c2545;
+  --accent-surface: #1c1730;
+
+  /* Clay - failure or a destructive path. Warm and desaturated, not signal red */
+  --danger: #e58a7b;
+  --danger-border: #45292a;
+  --clay-surface: #241a19;
+  --clay-surface-deep: #1a1314;
+  --clay-dim: #b4675a;
+
+  /* Type */
+  --font-sans: 'IBM Plex Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+  --text-display: 20px;
+  --text-section: 16px;
+  --text-title: 13px;
+  --text-emphasis: 12.5px;
+  --text-body: 12px;
+  --text-control: 11.5px;
+  --text-label: 11px;
+  --text-chip: 10.5px;
+  --text-meta: 10px;
+  --text-micro: 9px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --leading-snug: 1.35;
+  --leading-normal: 1.45;
+  --leading-relaxed: 1.6;
+  --tracking-eyebrow: 0.15em;
+  --type-eyebrow: var(--weight-semibold) var(--text-meta) / 1.2 var(--font-sans);
+  --type-display: var(--weight-medium) var(--text-display) / 1.25 var(--font-sans);
+
+  /* Chrome geometry - honest to the pixel, not snapped to a 4pt grid */
+  --h-titlebar: 46px;
+  --w-tool-rail: 54px;
+  --w-side-panel: 322px;
+  --h-tabbar: 38px;
+  --h-filmstrip: 74px;
+  --h-statusbar: 26px;
+
+  --pad-panel: 16px;
+  --gap-group: 22px;
+  --gap-control: 13px;
+  --gap-inline: 7px;
+
+  /* Radius encodes scale: the smaller the object, the tighter the corner */
+  --radius-hairline: 1px;
+  --radius-sm: 4px;
+  --radius-icon: 6px;
+  --radius-control: 7px;
+  --radius-base: 7px;
+  --radius-row: 8px;
+  --radius-card: 9px;
+  --radius-hud: 10px;
+  --radius-overlay: 11px;
+  --radius-panel: 12px;
+  --radius-chip: 20px;
+  --radius-round: 999px;
+
+  /* Elevation - a 1px ring first, a shadow only for what truly floats */
+  --shadow-knob: 0 1px 2px rgb(0 0 0 / 0.55);
+  --shadow-hud: 0 6px 20px rgb(0 0 0 / 0.5);
+  --shadow-panel-float: 0 10px 32px rgb(0 0 0 / 0.55);
+  --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.62);
+
+  /* Motion - the photo moves, the interface does not */
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-overlay: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --transition-control: color var(--dur-instant) var(--ease-standard),
+    background-color var(--dur-instant) var(--ease-standard),
+    border-color var(--dur-instant) var(--ease-standard);
+}

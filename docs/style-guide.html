@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aperture — Style Guide</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--surface-app);font-family:var(--font-sans);color:var(--text-body);-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-text);text-decoration:none}
+  a:hover{color:var(--accent-hover)}
+
+  .shell{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+
+  nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;background:var(--surface-chrome);border-right:1px solid var(--border-hairline);padding:26px 18px;display:flex;flex-direction:column;gap:22px}
+  .brand{display:flex;flex-direction:column;gap:5px}
+  .brand b{font-size:var(--text-title);font-weight:var(--weight-medium);color:var(--text-primary);letter-spacing:-.01em}
+  .brand span{font-family:var(--font-mono);font-size:var(--text-meta);color:var(--text-ghost);line-height:1.7}
+  .navgrp{display:flex;flex-direction:column;gap:6px}
+  .navgrp>b{font:var(--type-eyebrow);letter-spacing:var(--tracking-eyebrow);text-transform:uppercase;color:var(--text-faint);margin-bottom:2px}
+  nav a{font-size:var(--text-control);color:var(--text-muted);padding:2px 0}
+  nav a:hover{color:var(--text-primary)}
+
+  main{padding:40px 44px 90px;max-width:1080px}
+  header.top{display:flex;flex-direction:column;gap:12px;padding-bottom:26px;border-bottom:1px solid var(--border-hairline);margin-bottom:40px}
+  header.top h1{margin:0;font:var(--type-display);color:var(--text-primary);font-size:26px}
+  header.top p{margin:0;font-size:var(--text-body);color:var(--text-secondary);line-height:var(--leading-relaxed);max-width:62ch}
+  .flags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .flag{font-size:var(--text-meta);color:var(--accent-text-dim);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:3px 7px}
+
+  section{padding:36px 0;border-bottom:1px solid var(--border-hairline)}
+  section:last-of-type{border-bottom:none}
+  h2{margin:0 0 6px;font-size:var(--text-section);font-weight:var(--weight-semibold);color:var(--text-primary);letter-spacing:-.01em}
+  .lede{margin:0 0 24px;font-size:var(--text-body);color:var(--text-secondary);line-height:var(--leading-relaxed);max-width:66ch}
+  h3{margin:28px 0 12px;font:var(--type-eyebrow);letter-spacing:var(--tracking-eyebrow);text-transform:uppercase;color:var(--text-faint)}
+  h3:first-of-type{margin-top:0}
+  p{line-height:var(--leading-relaxed);font-size:var(--text-body);color:var(--text-secondary);max-width:66ch}
+  code{font-family:var(--font-mono);font-size:var(--text-chip);color:var(--text-muted)}
+
+  .rules{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:r}
+  .rules li{counter-increment:r;display:flex;gap:12px;font-size:var(--text-body);color:var(--text-secondary);line-height:var(--leading-snug)}
+  .rules li::before{content:counter(r);flex:none;width:19px;height:19px;border-radius:var(--radius-round);background:var(--surface-hover);border:1px solid var(--border-subtle);font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-muted);display:flex;align-items:center;justify-content:center;margin-top:2px}
+
+  .grid{display:grid;gap:10px}
+  .g11{grid-template-columns:repeat(11,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+
+  .sw{display:flex;flex-direction:column;gap:6px}
+  .sw .chip{height:54px;border-radius:var(--radius-base);border:1px solid var(--border-hairline)}
+  .sw .n{font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)}
+
+  .tokrow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-hairline)}
+  .tokrow:last-child{border-bottom:none}
+  .tokrow .box{width:30px;height:30px;flex:none;border-radius:var(--radius-base);border:1px solid var(--border-hairline)}
+  .tokrow .nm{font-family:var(--font-mono);font-size:var(--text-chip);color:var(--text-secondary);width:214px;flex:none}
+  .tokrow .hex{font-family:var(--font-mono);font-size:var(--text-chip);color:var(--text-ghost);width:76px;flex:none}
+  .tokrow .use{font-size:var(--text-label);color:var(--text-muted);line-height:1.5}
+
+  .panelbox{background:var(--surface-chrome);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);padding:16px}
+  .demo{background:var(--surface-chrome);border:1px solid var(--border-hairline);border-radius:var(--radius-panel);padding:16px;display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+
+  .b{height:32px;padding:0 14px;border-radius:var(--radius-control);display:inline-flex;align-items:center;gap:7px;font-size:var(--text-control);border:1px solid transparent;cursor:pointer;transition:var(--transition-control)}
+  .b.pri{background:var(--text-primary);color:var(--text-on-solid);font-weight:var(--weight-semibold)}
+  .b.pri:hover{background:var(--white)}
+  .b.acc{background:var(--accent);color:var(--text-on-accent);font-weight:var(--weight-semibold)}
+  .b.acc:hover{background:var(--accent-hover)}
+  .b.sec{border-color:var(--border-quiet);color:var(--text-muted)}
+  .b.sec:hover{border-color:var(--border-hover);color:var(--text-primary)}
+  .b.ai{border-color:var(--accent-border);color:var(--accent-text-dim)}
+  .b.ai:hover{background:var(--accent-surface);color:var(--accent-text)}
+  .b.dgr{border-color:var(--danger-border);color:var(--danger)}
+  .b.dgr:hover{background:#1A1314}
+  .kbd{font-family:var(--font-mono);font-size:var(--text-meta);opacity:.62}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font:var(--type-eyebrow);letter-spacing:var(--tracking-eyebrow);text-transform:uppercase;color:var(--text-faint);padding:0 0 9px;border-bottom:1px solid var(--border-hairline);font-weight:var(--weight-semibold)}
+  td{padding:9px 0;border-bottom:1px solid var(--border-hairline);vertical-align:baseline;font-size:var(--text-control);color:var(--text-secondary)}
+  td.mono,th.mono{font-family:var(--font-mono);font-size:var(--text-chip);color:var(--text-ghost);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+
+  .yn{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .card{border-radius:var(--radius-card);padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--surface-chrome)}
+  .card.do{border:1px solid var(--accent-border)}
+  .card.dont{border:1px solid var(--danger-border);background:var(--clay-surface-deep)}
+  .card .lbl{font:var(--type-eyebrow);letter-spacing:var(--tracking-eyebrow);text-transform:uppercase}
+  .card.do .lbl{color:var(--accent-text-dim)}
+  .card.dont .lbl{color:var(--clay-dim)}
+  .card p{margin:0;font-size:var(--text-label);color:var(--text-muted);line-height:var(--leading-normal)}
+
+  .sl{display:flex;flex-direction:column;gap:var(--gap-inline)}
+  .slh{display:flex;align-items:baseline;justify-content:space-between}
+  .sll{font-size:var(--text-control);color:var(--text-secondary)}
+  .slv{font-family:var(--font-mono);font-size:var(--text-label);color:var(--text-primary)}
+  .slv.idle{color:var(--text-numeric-idle)}
+  .tk{position:relative;height:14px;display:flex;align-items:center}
+  .tk i{position:absolute;left:0;right:0;height:2px;background:var(--track);border-radius:var(--radius-hairline)}
+  .tk em{position:absolute;left:50%;width:1px;height:6px;background:var(--track-tick)}
+  .tk s{position:absolute;height:2px;background:var(--track-fill-neutral);border-radius:var(--radius-hairline)}
+  .tk s.acc{background:var(--track-fill-accent)}
+  .tk b{position:absolute;width:11px;height:11px;margin-left:-5.5px;border-radius:var(--radius-round);background:var(--knob);box-shadow:var(--shadow-knob)}
+  .tk b.idle{background:var(--knob-idle)}
+
+  .stack{display:flex;flex-direction:column;gap:var(--gap-control)}
+  .spread{display:flex;flex-direction:column;gap:var(--gap-group)}
+  .eb{font:var(--type-eyebrow);letter-spacing:var(--tracking-eyebrow);text-transform:uppercase;color:var(--text-faint)}
+  .hint{font-family:var(--font-mono);font-size:var(--text-meta);color:var(--text-numeric-idle)}
+  .ghead{display:flex;align-items:center;justify-content:space-between}
+
+  .swatchpair{display:flex;gap:10px}
+  .swatchpair>div{flex:1;height:88px;border-radius:var(--radius-panel);display:flex;align-items:flex-end;padding:9px;font-family:var(--font-mono);font-size:var(--text-micro)}
+
+  .radii{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .radii .c{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .radii .r{width:48px;height:48px;background:var(--surface-active);border:1px solid var(--border-subtle)}
+
+  .elev{display:flex;gap:14px}
+  .elev>div{flex:1;height:96px;border-radius:var(--radius-overlay);background:var(--surface-raised);border:1px solid var(--border-subtle);display:flex;align-items:flex-end;padding:10px;font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)}
+
+  .copy{display:flex;flex-direction:column;gap:14px}
+  .copyrow{display:grid;grid-template-columns:22px 1fr;gap:11px;align-items:start}
+  .mark{width:19px;height:19px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:10px;flex:none;margin-top:2px}
+  .mark.y{background:var(--accent);color:var(--text-on-accent)}
+  .mark.n{background:var(--clay-surface);border:1px solid var(--danger-border);color:var(--danger)}
+  .copyrow q{font-size:var(--text-body);color:var(--text-body);quotes:"“" "”";line-height:var(--leading-snug)}
+  .copyrow small{display:block;font-size:var(--text-label);color:var(--text-muted);margin-top:4px;line-height:var(--leading-normal)}
+
+  .foot{padding:30px 0 0;font-size:var(--text-label);color:var(--text-muted);line-height:var(--leading-relaxed)}
+</style></head>
+<body>
+<div class="shell">
+
+<nav>
+  <div class="brand">
+    <b>Aperture</b>
+    <span>style guide<br>v1.0 · pt-BR</span>
+  </div>
+  <div class="navgrp">
+    <b>Princípios</b>
+    <a href="#principios">Ideia governante</a>
+    <a href="#regras">Cinco regras</a>
+  </div>
+  <div class="navgrp">
+    <b>Fundamentos</b>
+    <a href="#cor">Cor</a>
+    <a href="#acento">Acento e semântica</a>
+    <a href="#tipografia">Tipografia</a>
+    <a href="#numeros">Números</a>
+    <a href="#espaco">Espaço e chrome</a>
+    <a href="#forma">Forma e elevação</a>
+    <a href="#movimento">Movimento e estados</a>
+    <a href="#icones">Ícones</a>
+    <a href="#imagem">Imagem e canvas</a>
+  </div>
+  <div class="navgrp">
+    <b>Aplicação</b>
+    <a href="#controles">Controles</a>
+    <a href="#paineis">Painéis</a>
+    <a href="#ia">Superfícies de IA</a>
+    <a href="#erros">Erros e ausência</a>
+  </div>
+  <div class="navgrp">
+    <b>Voz</b>
+    <a href="#voz">Tom e escrita</a>
+    <a href="#vocabulario">Vocabulário</a>
+  </div>
+  <div class="navgrp">
+    <b>Referência</b>
+    <a href="#arquivos">Arquivos</a>
+  </div>
+</nav>
+
+<main>
+
+<header class="top">
+  <h1>Style guide</h1>
+  <p>Aperture é um editor de fotos desktop local-first. Este documento é a versão curta e visual do sistema: as regras que decidem uma tela nova. O <a href="readme.md">readme.md</a> traz a versão longa; os cards em <code>guidelines/</code> trazem os espécimes isolados.</p>
+  <div class="flags">
+    <span class="flag">Sem logo fornecido</span>
+    <span class="flag">Fontes substituídas — IBM Plex</span>
+    <span class="flag">Ícones substituídos — Lucide</span>
+    <span class="flag">"Aperture" é título de trabalho</span>
+  </div>
+</header>
+
+<section id="principios">
+  <h2>A ideia governante</h2>
+  <p class="lede">A foto é a única coisa saturada na tela. Todo o resto é um painel de instrumentos quase preto que sai do caminho.</p>
+  <p>Isso resolve quase todas as dúvidas de design sozinho. Uma cor a mais na interface disputa com a imagem. Uma sombra colorida contamina a percepção de branco. Um cinza azulado desloca o balanço de branco aparente da foto ao lado. Uma animação chama atenção para o software em vez do trabalho. Se uma decisão deixa a interface mais interessante às custas da foto, ela está errada.</p>
+  <div class="yn" style="margin-top:22px">
+    <div class="card do">
+      <span class="lbl">Faça</span>
+      <div class="swatchpair">
+        <div style="background:var(--surface-chrome);color:var(--text-ghost)">chrome</div>
+        <div style="background:var(--surface-canvas-matte);color:var(--text-ghost)">canvas</div>
+      </div>
+      <p>Dois fundos por tela, no máximo: chrome e canvas. A hierarquia vem de fio de 1px e espaçamento.</p>
+    </div>
+    <div class="card dont">
+      <span class="lbl">Não faça</span>
+      <div class="swatchpair">
+        <div style="background:linear-gradient(135deg,#2A1B4A,#1A3350);color:var(--text-ghost)">gradiente</div>
+        <div style="background:#12202E;color:var(--text-ghost)">cinza azulado</div>
+      </div>
+      <p>Fundo em gradiente, cinza com viés de cor, cartão flutuando com sombra sobre página opaca.</p>
+    </div>
+  </div>
+</section>
+
+<section id="regras">
+  <h2>Cinco regras</h2>
+  <p class="lede">Se você só ler uma seção, leia esta. Vale para qualquer tela construída sobre este sistema.</p>
+  <ol class="rules">
+    <li>Violeta só para IA e máscara. Nunca para ênfase, nunca decorativo.</li>
+    <li>Preenchimento branco para a única ação que confirma, uma por superfície.</li>
+    <li>Toda mudança automática declara seu número — <code>+0.35 EV</code>, <code>62 %</code>, <code>14,2 MB</code>.</li>
+    <li>Todo job longo é cancelável e mostra porcentagem real. Nunca spinner indeterminado.</li>
+    <li>Agrupar por espaço, elevar por fio, enfatizar por peso — nessa ordem.</li>
+  </ol>
+</section>
+
+<section id="cor">
+  <h2>Cor</h2>
+  <p class="lede">Uma rampa neutra única, deliberadamente sem matiz, de <code>#070708</code> a <code>#EDEDEF</code>.</p>
+  <div class="grid g11">
+    <div class="sw"><div class="chip" style="background:var(--gray-1000)"></div><span class="n">1000</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-960)"></div><span class="n">960</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-940)"></div><span class="n">940</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-900)"></div><span class="n">900</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-860)"></div><span class="n">860</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-780)"></div><span class="n">780</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-700)"></div><span class="n">700</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-600)"></div><span class="n">600</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-400)"></div><span class="n">400</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-200)"></div><span class="n">200</span></div>
+    <div class="sw"><div class="chip" style="background:var(--gray-050)"></div><span class="n">050</span></div>
+  </div>
+
+  <h3>Use o token semântico, não a rampa</h3>
+  <p>A rampa existe para o nível semântico poder ser reapontado. Em produto, escreva <code>--surface-chrome</code>, não <code>--gray-940</code>.</p>
+  <div class="panelbox" style="margin-top:12px">
+    <div class="tokrow"><span class="box" style="background:var(--surface-app)"></span><span class="nm">--surface-app</span><span class="hex">#0A0A0B</span><span class="use">Corpo da janela, fundo de tela cheia</span></div>
+    <div class="tokrow"><span class="box" style="background:var(--surface-chrome)"></span><span class="nm">--surface-chrome</span><span class="hex">#0D0D0F</span><span class="use">Barra de título, régua, painel, filmstrip</span></div>
+    <div class="tokrow"><span class="box" style="background:var(--surface-canvas-matte)"></span><span class="nm">--surface-canvas-matte</span><span class="hex">#121214</span><span class="use">Canvas padrão — isola a foto sem moldura</span></div>
+    <div class="tokrow"><span class="box" style="background:var(--surface-raised)"></span><span class="nm">--surface-raised</span><span class="hex">#101013</span><span class="use">Diálogo, card, callout</span></div>
+    <div class="tokrow"><span class="box" style="background:var(--surface-hover)"></span><span class="nm">--surface-hover</span><span class="hex">#17171A</span><span class="use">Hover de controle fantasma</span></div>
+    <div class="tokrow"><span class="box" style="background:var(--surface-active)"></span><span class="nm">--surface-active</span><span class="hex">#1D1D22</span><span class="use">Ferramenta selecionada (+ ring)</span></div>
+  </div>
+
+  <h3>Bordas — o fio de 1px é o recurso estrutural principal</h3>
+  <div class="panelbox" style="margin-top:12px">
+    <div class="tokrow"><span class="box" style="background:transparent;border:1px solid var(--border-hairline)"></span><span class="nm">--border-hairline</span><span class="hex">#1B1B1F</span><span class="use">Divide regiões: barras, painéis, linhas de tabela</span></div>
+    <div class="tokrow"><span class="box" style="background:transparent;border:1px solid var(--border-quiet)"></span><span class="nm">--border-quiet</span><span class="hex">#212126</span><span class="use">Contorno de controle em repouso</span></div>
+    <div class="tokrow"><span class="box" style="background:transparent;border:1px solid var(--border-subtle)"></span><span class="nm">--border-subtle</span><span class="hex">#26262B</span><span class="use">Card, janela, diálogo</span></div>
+    <div class="tokrow"><span class="box" style="background:transparent;border:1px solid var(--border-hover)"></span><span class="nm">--border-hover</span><span class="hex">#33333A</span><span class="use">Hover — o único movimento de borda</span></div>
+  </div>
+</section>
+
+<section id="acento">
+  <h2>Acento e semântica</h2>
+  <p class="lede">Dois acentos, ambos semânticos. Se você não consegue dizer qual significado está aplicando, use neutro.</p>
+
+  <div class="grid g2" style="margin-top:4px">
+    <div class="panelbox">
+      <div class="swatchpair" style="margin-bottom:12px">
+        <div style="background:var(--accent);color:var(--violet-ink)">#A78BFA</div>
+        <div style="background:var(--accent-surface);border:1px solid var(--accent-border);color:var(--accent-text)">surface</div>
+      </div>
+      <p style="margin:0;font-size:var(--text-label);color:var(--text-secondary);line-height:var(--leading-normal)"><b style="color:var(--text-primary);font-weight:500">Violeta = um modelo tocou isto.</b><br>Planos de IA, máscaras, segmentação, inpainting, status de modelos carregados, camada de IA selecionada.</p>
+    </div>
+    <div class="panelbox">
+      <div class="swatchpair" style="margin-bottom:12px">
+        <div style="background:var(--clay-400);color:#2A1A17">#E58A7B</div>
+        <div style="background:var(--clay-surface);border:1px solid var(--danger-border);color:var(--danger)">surface</div>
+      </div>
+      <p style="margin:0;font-size:var(--text-label);color:var(--text-secondary);line-height:var(--leading-normal)"><b style="color:var(--text-primary);font-weight:500">Barro = falha ou caminho destrutivo.</b><br>Quente e dessaturado, não vermelho de sinal. Sempre acompanhado de nota técnica monoespaçada.</p>
+    </div>
+  </div>
+
+  <h3>Ação que confirma é branca, não colorida</h3>
+  <div class="demo">
+    <span class="b pri">Exportar</span>
+    <span class="b acc">Aplicar como camada</span>
+    <span class="b sec">Cancelar</span>
+    <span class="b ai">✦ Assistente <span class="kbd">⌘K</span></span>
+    <span class="b dgr">Tentar em 2×</span>
+    <span class="b sec" style="opacity:.4">Desativado</span>
+  </div>
+  <p style="margin-top:12px"><code>accent</code> aparece em um botão apenas quando ele aplica saída de IA. Uma superfície nunca tem dois botões de preenchimento sólido.</p>
+</section>
+
+<section id="tipografia">
+  <h2>Tipografia</h2>
+  <p class="lede">IBM Plex Sans e IBM Plex Mono. Um grotesco com detalhe levemente mecânico e — decisivo — um companheiro mono que compartilha o mesmo esqueleto, porque metade desta interface é número.</p>
+
+  <table>
+    <tr><th>Amostra</th><th class="mono">token</th><th class="mono">px</th><th>Uso</th></tr>
+    <tr><td style="font-size:var(--text-display);font-weight:600;color:var(--text-primary);letter-spacing:-.01em">Boa tarde</td><td class="mono">--text-display</td><td class="mono">20</td><td>Uma vez por produto: saudação da tela inicial</td></tr>
+    <tr><td style="font-size:var(--text-section);font-weight:600;color:var(--text-primary)">Estados de erro</td><td class="mono">--text-section</td><td class="mono">16</td><td>Título de tela cheia</td></tr>
+    <tr><td style="font-size:var(--text-title);font-weight:500;color:var(--text-primary)">Exportar</td><td class="mono">--text-title</td><td class="mono">13</td><td>Título de diálogo</td></tr>
+    <tr><td style="font-size:var(--text-emphasis);color:var(--text-primary)">enseada-04.myphoto</td><td class="mono">--text-emphasis</td><td class="mono">12.5</td><td>Nome de arquivo, título de card</td></tr>
+    <tr><td style="font-size:var(--text-body)">Nada é aplicado até confirmar.</td><td class="mono">--text-body</td><td class="mono">12</td><td>Prosa em painel e diálogo</td></tr>
+    <tr><td style="font-size:var(--text-control);color:var(--text-secondary)">Temperatura</td><td class="mono">--text-control</td><td class="mono">11.5</td><td><b style="color:var(--text-primary);font-weight:500">O tamanho de trabalho</b> — todo rótulo de controle</td></tr>
+    <tr><td style="font-size:var(--text-chip);color:var(--text-muted)">Céu mais dramático</td><td class="mono">--text-chip</td><td class="mono">10.5</td><td>Chips, notas auxiliares</td></tr>
+    <tr><td style="font-family:var(--font-mono);font-size:var(--text-meta);color:var(--text-ghost)">autosave 12 s atrás</td><td class="mono">--text-meta</td><td class="mono">10</td><td>Eyebrow, barra de status, meta</td></tr>
+  </table>
+
+  <h3>Caixa alta existe em um lugar só</h3>
+  <div class="panelbox" style="margin-top:12px;display:flex;gap:30px;align-items:flex-start">
+    <div class="stack" style="width:250px">
+      <div class="ghead"><span class="eb">Luz</span><span class="hint">auto</span></div>
+      <div class="sl"><div class="slh"><span class="sll">Exposição</span><span class="slv">+0.35 EV</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:12%"></s><b style="left:62%"></b></div></div>
+      <div class="sl"><div class="slh"><span class="sll">Contraste</span><span class="slv">+12</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:6%"></s><b style="left:56%"></b></div></div>
+    </div>
+    <p style="margin:0;font-size:var(--text-label);color:var(--text-secondary);line-height:var(--leading-relaxed);flex:1">O eyebrow de seção — 10px, <code>0.15em</code>, <code>--text-faint</code>. Sem ícone, sem borda, sem fundo. Fora dele: sentence case em tudo, sem title case, sem ponto final em rótulo ou botão.</p>
+  </div>
+</section>
+
+<section id="numeros">
+  <h2>Números</h2>
+  <p class="lede">Todo valor medido é monoespaçado, alinhado à direita contra seu rótulo, e assinado quando o controle é bipolar.</p>
+
+  <div class="grid g2">
+    <div class="panelbox stack">
+      <div class="sl"><div class="slh"><span class="sll">Exposição</span><span class="slv">+0.35 EV</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:12%"></s><b style="left:62%"></b></div></div>
+      <div class="sl"><div class="slh"><span class="sll">Realces</span><span class="slv">−24</span></div><div class="tk"><i></i><em></em><s style="left:38%;width:12%"></s><b style="left:38%"></b></div></div>
+      <div class="sl"><div class="slh"><span class="sll">Brancos · intocado</span><span class="slv idle">0</span></div><div class="tk"><i></i><em></em><b class="idle" style="left:50%"></b></div></div>
+      <div class="sl"><div class="slh"><span class="sll">Opacidade da máscara</span><span class="slv">88 %</span></div><div class="tk"><i></i><s class="acc" style="left:0;width:88%"></s><b style="left:88%"></b></div></div>
+    </div>
+    <div>
+      <p style="margin-top:0">Um slider bipolar em exatamente zero desenha botão e valor em cinza. <b style="color:var(--text-primary);font-weight:500">"Intocado" precisa ser legível de relance</b> através de vinte sliders — é a leitura mais frequente do painel.</p>
+      <p>Preenchimento violeta (<code>--track-fill-accent</code>) só em parâmetro de máscara ou de IA. Trilho com gradiente existe para balanço de branco e suprime o preenchimento.</p>
+      <p style="margin-bottom:0">Formato pt-BR: vírgula decimal, espaço fino de milhar (<code>5 480 K</code>, <code>14,2 MB</code>), unidade minúscula separada por espaço.</p>
+    </div>
+  </div>
+</section>
+
+<section id="espaco">
+  <h2>Espaço e chrome</h2>
+  <p class="lede">A escala é honesta ao pixel, não um grid de 4pt. Se o token diz 5px, escreva 5px — arredondar quebra a densidade de ferramenta.</p>
+
+  <table>
+    <tr><th>Região</th><th class="mono">token</th><th class="mono">px</th></tr>
+    <tr><td>Barra de título</td><td class="mono">--h-titlebar</td><td class="mono">46</td></tr>
+    <tr><td>Régua de ferramentas</td><td class="mono">--w-tool-rail</td><td class="mono">54</td></tr>
+    <tr><td>Painel lateral</td><td class="mono">--w-side-panel</td><td class="mono">322</td></tr>
+    <tr><td>Abas do painel</td><td class="mono">--h-tabbar</td><td class="mono">38</td></tr>
+    <tr><td>Filmstrip</td><td class="mono">--h-filmstrip</td><td class="mono">74</td></tr>
+    <tr><td>Barra de status</td><td class="mono">--h-statusbar</td><td class="mono">26</td></tr>
+  </table>
+
+  <h3>Ritmo do painel</h3>
+  <div class="panelbox" style="margin-top:12px;display:flex;gap:30px;align-items:flex-start">
+    <div class="spread" style="width:250px;flex:none">
+      <div class="stack">
+        <div class="ghead"><span class="eb">Luz</span><span class="hint">auto</span></div>
+        <div class="sl"><div class="slh"><span class="sll">Exposição</span><span class="slv">+0.35</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:12%"></s><b style="left:62%"></b></div></div>
+        <div class="sl"><div class="slh"><span class="sll">Contraste</span><span class="slv">+12</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:6%"></s><b style="left:56%"></b></div></div>
+      </div>
+      <div class="stack">
+        <div class="ghead"><span class="eb">Cor</span></div>
+        <div class="sl"><div class="slh"><span class="sll">Temperatura</span><span class="slv">+14</span></div><div class="tk"><i></i><em></em><s style="left:50%;width:7%"></s><b style="left:57%"></b></div></div>
+      </div>
+    </div>
+    <div style="flex:1">
+      <p style="margin-top:0"><code>--pad-panel</code> 16px nas quatro bordas. <code>--gap-group</code> 22px entre grupos — <b style="color:var(--text-primary);font-weight:500">é o único separador</b>. <code>--gap-control</code> 13px entre sliders, <code>--gap-inline</code> 7px entre rótulo e trilho.</p>
+      <p style="margin-bottom:0">Nunca use linha divisória entre grupos de ajuste. O agrupamento vem do espaço.</p>
+    </div>
+  </div>
+
+  <h3>Chrome fixo, conteúdo rolante</h3>
+  <p>Só o corpo do painel e a coluna principal rolam. A régua fica à esquerda, sempre. O painel fica à direita por padrão, com variantes esquerda e flutuante.</p>
+</section>
+
+<section id="forma">
+  <h2>Forma e elevação</h2>
+  <p class="lede">O raio codifica escala: quanto menor o objeto, mais fechado o canto. Elevação é ring de 1px primeiro, sombra depois.</p>
+
+  <div class="radii">
+    <div class="c"><div class="r" style="border-radius:var(--radius-sm)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">4 checkbox</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-base)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">6 icon btn</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-control)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">7 padrão</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-panel)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">8 row</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-card)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">9 card</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-hud)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">10 hud</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-overlay)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">11 overlay</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-window)"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">12 janela</span></div>
+    <div class="c"><div class="r" style="border-radius:var(--radius-pill);width:70px;height:26px"></div><span class="n" style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">20 só chips</span></div>
+  </div>
+
+  <h3>Sombra só para o que flutua de verdade</h3>
+  <div class="elev" style="background:var(--surface-canvas-matte);border-radius:var(--radius-panel);padding:18px;margin-top:12px">
+    <div style="box-shadow:var(--shadow-hud)">--shadow-hud</div>
+    <div style="box-shadow:var(--shadow-panel-float)">--shadow-panel-float</div>
+    <div style="box-shadow:var(--shadow-dialog)">--shadow-dialog</div>
+  </div>
+  <p style="margin-top:12px">Todas em preto puro, sem brilho colorido, sem luz ambiente. Ferramenta selecionada é <code>--surface-active</code> + ring de 1px, não preenchimento.</p>
+
+  <h3>Transparência em três lugares</h3>
+  <p>HUD de zoom (<code>.92</code> + blur 12px), painel flutuante (<code>.94</code> + blur 14px), scrim de modal (<code>.66</code> + blur 3px). Painel encostado numa borda é opaco — painel translúcido sobre fotografia torna as duas coisas ilegíveis.</p>
+</section>
+
+<section id="movimento">
+  <h2>Movimento e estados</h2>
+  <p class="lede">A foto se move; a interface não.</p>
+
+  <div class="grid g2">
+    <div class="panelbox" style="display:flex;flex-direction:column;gap:9px">
+      <span class="eb" style="margin-bottom:2px">repouso → hover</span>
+      <span class="b sec">Cancelar</span>
+      <span class="b" style="border-color:var(--border-hover);color:var(--text-primary)">Cancelar · hover</span>
+      <span class="b pri">Exportar</span>
+      <span class="b" style="background:var(--white);color:var(--text-on-solid);font-weight:600">Exportar · hover</span>
+    </div>
+    <div>
+      <p style="margin-top:0">Hover clareia cor ou borda. Não move, não escala, não brilha. Press escurece um passo — não encolhe.</p>
+      <p><code>--dur-instant</code> 80ms cor · <code>--dur-fast</code> 140ms troca de aba · <code>--dur-overlay</code> 180ms scrim. Curva única: <code>cubic-bezier(0.2,0,0.2,1)</code>.</p>
+      <p style="margin-bottom:0">Sem bounce, sem scale-in, sem painel deslizante, sem skeleton shimmer, <b style="color:var(--text-primary);font-weight:500">sem spinner indeterminado</b>. Foco é ring de 1px <code>--accent-border</code>, só em campo de texto.</p>
+    </div>
+  </div>
+</section>
+
+<section id="icones">
+  <h2>Ícones</h2>
+  <p class="lede">Lucide, stroke 1.5–1.6, <code>currentColor</code>, nunca preenchido.</p>
+  <div class="demo" style="gap:14px">
+    <span style="display:flex;gap:6px">
+      <span style="width:36px;height:36px;border-radius:var(--radius-panel);display:flex;align-items:center;justify-content:center;color:var(--text-primary);background:var(--surface-active);box-shadow:var(--ring-active)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5 3l14 8.5-6.2 1.4L9.6 19z"/></svg></span>
+      <span style="width:36px;height:36px;border-radius:var(--radius-panel);display:flex;align-items:center;justify-content:center;color:var(--text-dim)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg></span>
+      <span style="width:36px;height:36px;border-radius:var(--radius-panel);display:flex;align-items:center;justify-content:center;color:var(--text-dim)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 20c3 0 4-2 4-4"/><path d="M8.5 16.5L18 7a2.1 2.1 0 0 0-3-3L5.5 13.5"/></svg></span>
+      <span style="width:36px;height:36px;border-radius:var(--radius-panel);display:flex;align-items:center;justify-content:center;color:var(--text-dim)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg></span>
+    </span>
+    <span style="width:1px;height:26px;background:var(--border-hairline)"></span>
+    <span style="display:flex;gap:8px">
+      <span style="width:26px;height:26px;border-radius:var(--radius-base);background:var(--surface-hover);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted)">☀</span>
+      <span style="width:26px;height:26px;border-radius:var(--radius-base);background:var(--surface-hover);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent-text)">✦</span>
+      <span style="width:26px;height:26px;border-radius:var(--radius-base);background:var(--surface-hover);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted)">◐</span>
+      <span style="width:26px;height:26px;border-radius:var(--radius-base);background:var(--surface-hover);border:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted)">▣</span>
+    </span>
+    <span style="font-family:var(--font-mono);font-size:var(--text-meta);color:var(--text-ghost)">glifos de tipo de camada</span>
+  </div>
+  <p style="margin-top:12px">17px na régua, 15px no chrome, 13px dentro de botão. A única forma preenchida intencional é o círculo meio-cheio da máscara: <b style="color:var(--text-primary);font-weight:500">o preenchimento é o significado</b>. Sem icon font, sem sprite, sem PNG, sem emoji.</p>
+</section>
+
+<section id="imagem">
+  <h2>Imagem e canvas</h2>
+  <p class="lede">Não há imagem no sistema, por design. A fotografia do usuário é a única imagem do produto.</p>
+  <div class="grid g3">
+    <div>
+      <div style="height:104px;border-radius:var(--radius-panel);background:var(--surface-canvas-matte);padding:12px;display:flex"><div style="flex:1;background:var(--surface-active);border-radius:var(--radius-xs)"></div></div>
+      <p style="font-size:var(--text-control);color:var(--text-secondary);margin:8px 0 2px">Matte · padrão</p>
+      <span style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">--surface-canvas-matte</span>
+    </div>
+    <div>
+      <div style="height:104px;border-radius:var(--radius-panel);background:var(--surface-canvas-bleed);display:flex"><div style="flex:1;background:var(--surface-active);border-radius:var(--radius-panel)"></div></div>
+      <p style="font-size:var(--text-control);color:var(--text-secondary);margin:8px 0 2px">Full bleed</p>
+      <span style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">--surface-canvas-bleed</span>
+    </div>
+    <div>
+      <div style="height:104px;border-radius:var(--radius-panel);background:var(--surface-canvas-framed);padding:22px;display:flex"><div style="flex:1;background:var(--surface-active);border-radius:var(--radius-xs)"></div></div>
+      <p style="font-size:var(--text-control);color:var(--text-secondary);margin:8px 0 2px">Com respiro</p>
+      <span style="font-family:var(--font-mono);font-size:var(--text-micro);color:var(--text-ghost)">--surface-canvas-framed</span>
+    </div>
+  </div>
+  <p style="margin-top:16px">Foto no canvas recebe fio de 1px, nunca sombra nem moldura de papel falsa. Área vazia é poço tracejado <code>#26262B</code> com instrução de 11.5px e dica monoespaçada de 10.5px. Sem stock, sem ilustração, sem cenário desenhado em SVG.</p>
+  <p><b style="color:var(--text-primary);font-weight:500">Máscara sobre a imagem:</b> violeta a 28% com contorno tracejado <code>#C4B2FD</code> e scrim externo <code>0 0 0 9999px rgba(10,10,11,.35)</code> escurecendo tudo fora da seleção. Antes/depois é divisão branca dura de 1px com alça redonda de 26px.</p>
+</section>
+
+<section id="controles">
+  <h2>Controles</h2>
+  <p class="lede">Alturas: 28 barra de título, 30 linha de diálogo, 32 padrão, 34 confirmação de largura total. Raio 7 em tudo que é controle.</p>
+  <table>
+    <tr><th>Componente</th><th>Quando</th><th class="mono">arquivo</th></tr>
+    <tr><td>Button</td><td>Uma <code>primary</code> por superfície; <code>accent</code> só aplica saída de IA</td><td class="mono">core/Button</td></tr>
+    <tr><td>IconButton</td><td>Utilitário de chrome (30px) e régua de ferramentas (36px)</td><td class="mono">core/IconButton</td></tr>
+    <tr><td>Badge</td><td>Estado estático: formato, procedência de modelo, salvamento</td><td class="mono">core/Badge</td></tr>
+    <tr><td>Chip</td><td>Filtro (pill) ou micro-ação quadrada de máscara</td><td class="mono">core/Chip</td></tr>
+    <tr><td>Slider</td><td>O controle central. Bipolar por padrão</td><td class="mono">forms/Slider</td></tr>
+    <tr><td>Checkbox</td><td>Lista de revisão "propor, não aplicar", com delta monoespaçado</td><td class="mono">forms/Checkbox</td></tr>
+    <tr><td>SegmentedControl</td><td>2–4 opções exclusivas; acima disso, select</td><td class="mono">forms/SegmentedControl</td></tr>
+  </table>
+</section>
+
+<section id="paineis">
+  <h2>Painéis</h2>
+  <p class="lede">O painel de 322px é onde o produto vive. Três componentes o compõem.</p>
+  <table>
+    <tr><th>Componente</th><th>Regra</th><th class="mono">arquivo</th></tr>
+    <tr><td>TabBar</td><td>3–4 abas de uma palavra, sublinhado de 1.5px, sem pílula</td><td class="mono">panels/TabBar</td></tr>
+    <tr><td>PanelSection</td><td>Eyebrow + hint opcional. Sem borda, sem fundo</td><td class="mono">panels/PanelSection</td></tr>
+    <tr><td>LayerRow</td><td>Seleção = superfície violeta + ring. Slot de máscara nunca é omitido</td><td class="mono">panels/LayerRow</td></tr>
+  </table>
+  <p>A linha de baixo da pilha é sempre o original intocado — é a prova visual do modelo não-destrutivo.</p>
+</section>
+
+<section id="ia">
+  <h2>Superfícies de IA</h2>
+  <p class="lede">A IA propõe e mostra a conta. Ela nunca aplica em silêncio e nunca fala em primeira pessoa.</p>
+  <ol class="rules">
+    <li>Todo plano gerado lista as operações com magnitude — <code>Temperatura +12</code>, <code>Realces −14</code>.</li>
+    <li>O resultado entra como <b style="color:var(--text-primary);font-weight:500">camada</b>, reversível, nunca achatado no pixel.</li>
+    <li>A superfície declara onde a computação aconteceu: <code>llm-edit-3b</code>, "IA local", "validado por schema. Nenhum código é executado".</li>
+    <li>Todo job mostra id real, porcentagem real e botão de cancelar.</li>
+    <li>Modelo ausente é um estado explicável, com tamanho do download e a promessa de funcionar offline depois.</li>
+  </ol>
+</section>
+
+<section id="erros">
+  <h2>Erros e ausência</h2>
+  <p class="lede">A ordem da copy é fixa: o que aconteceu → o que segue intacto → o que fazer.</p>
+  <div class="yn">
+    <div class="card do">
+      <span class="lbl">Faça</span>
+      <div style="display:flex;gap:10px">
+        <span style="width:30px;height:30px;flex:none;border-radius:var(--radius-card);background:var(--clay-surface);border:1px solid var(--danger-border);color:var(--danger);display:flex;align-items:center;justify-content:center">!</span>
+        <div>
+          <div style="font-size:var(--text-emphasis);color:var(--text-primary)">Upscale 4× ficou sem memória de GPU</div>
+          <div style="font-size:var(--text-label);color:var(--text-muted);line-height:var(--leading-normal);margin-top:4px">O projeto está intacto — nada foi aplicado. Tente 2× ou processe na CPU.</div>
+        </div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:var(--text-meta);color:var(--text-ghost);background:var(--surface-app);border:1px solid var(--border-hairline);border-radius:var(--radius-base);padding:7px 10px">job 7c19 · failed · vram 8.0/8.0 GB</div>
+    </div>
+    <div class="card dont">
+      <span class="lbl">Não faça</span>
+      <div style="display:flex;gap:10px">
+        <span style="width:30px;height:30px;flex:none;border-radius:var(--radius-card);background:var(--clay-surface);border:1px solid var(--danger-border);color:var(--danger);display:flex;align-items:center;justify-content:center">!</span>
+        <div>
+          <div style="font-size:var(--text-emphasis);color:var(--text-primary)">Ops! Algo deu errado 😕</div>
+          <div style="font-size:var(--text-label);color:var(--text-muted);line-height:var(--leading-normal);margin-top:4px">Tente novamente mais tarde.</div>
+        </div>
+      </div>
+      <p>Sem causa, sem nota técnica, sem dizer que o trabalho está salvo, sem caminho de saída — e com emoji.</p>
+    </div>
+  </div>
+</section>
+
+<section id="voz">
+  <h2>Tom e escrita</h2>
+  <p class="lede">Precisa, sem pressa, factual. A interface se comporta como instrumento: declara o que fez, em que unidade, e quanto custou.</p>
+  <div class="copy">
+    <div class="copyrow"><span class="mark y">✓</span><div><q>Análise concluída. Nada é aplicado até você confirmar.</q><small>Diz o estado e devolve o controle. Sem entusiasmo.</small></div></div>
+    <div class="copyrow"><span class="mark y">✓</span><div><q>Plano gerado em 1,2 s</q><small>A IA reporta, não narra. Nunca "Eu gerei um plano".</small></div></div>
+    <div class="copyrow"><span class="mark y">✓</span><div><q>Encontramos uma sessão não finalizada</q><small>Primeira pessoa do plural só quando o app agiu por iniciativa própria.</small></div></div>
+    <div class="copyrow"><span class="mark y">✓</span><div><q>Aplicar como camada</q><small>O botão nomeia a consequência, não "OK".</small></div></div>
+    <div class="copyrow"><span class="mark n">×</span><div><q>Ótimo! Sua foto ficou incrível!</q><small>Não elogia, não usa exclamação, não julga o resultado do usuário.</small></div></div>
+    <div class="copyrow"><span class="mark n">×</span><div><q>Aplicando Melhorias Automáticas</q><small>Title case não existe neste produto. E "melhorias" sem número não é auditável.</small></div></div>
+  </div>
+</section>
+
+<section id="vocabulario">
+  <h2>Vocabulário</h2>
+  <p class="lede">Português para ações e objetos. Inglês só onde é o termo de trabalho do fotógrafo — e monoespaçado quando é identificador técnico.</p>
+  <div class="grid g2">
+    <div class="panelbox">
+      <span class="eb">Português</span>
+      <p style="font-size:var(--text-control);color:var(--text-secondary);margin:10px 0 0;line-height:var(--leading-relaxed)">camada · máscara · ajuste · recorte · nitidez · realces · sombras · vibração · exportar · pincel · conta-gotas · histórico</p>
+    </div>
+    <div class="panelbox">
+      <span class="eb">Mantido em inglês</span>
+      <p style="font-size:var(--text-control);color:var(--text-secondary);margin:10px 0 0;line-height:var(--leading-relaxed)">RAW · EXIF · sRGB · Display P3 · inpainting · soft light · preset · autosave · job<br><span style="font-family:var(--font-mono);font-size:var(--text-chip);color:var(--text-ghost)">llm-edit-3b · seg-v2 · libraw · job 4f2a</span></p>
+    </div>
+  </div>
+  <p style="margin-top:16px"><b style="color:var(--text-primary);font-weight:500">Emoji: nunca.</b> Não em UI, não em copy, não como ícone. Glifos Unicode de tipo de camada são a única exceção, e são tipográficos, não decorativos.</p>
+</section>
+
+<section id="arquivos">
+  <h2>Arquivos</h2>
+  <table>
+    <tr><th>Caminho</th><th>O que é</th></tr>
+    <tr><td class="mono">styles.css</td><td>Entrada única. Só <code>@import</code></td></tr>
+    <tr><td class="mono">tokens/</td><td>fonts · colors · typography · spacing · radius · elevation · motion</td></tr>
+    <tr><td class="mono">components/</td><td>12 componentes em 4 grupos, cada um com <code>.jsx</code>, <code>.d.ts</code>, <code>.prompt.md</code></td></tr>
+    <tr><td class="mono">guidelines/</td><td>16 cards de espécime isolado</td></tr>
+    <tr><td class="mono">ui_kits/aperture-editor/</td><td>Shell estático do editor — referência de geometria de chrome</td></tr>
+    <tr><td class="mono">Photo Editor.dc.html</td><td><b style="color:var(--text-primary);font-weight:500">O kit interativo</b> — onze telas clicáveis. Fonte de verdade de comportamento</td></tr>
+    <tr><td class="mono">readme.md</td><td>Versão longa deste guia</td></tr>
+  </table>
+  <p class="foot">Onde este guia e o <code>Photo Editor.dc.html</code> discordarem, o arquivo ganha.<br>Substituições pendentes: marca real, face licenciada, set de ícones próprio.</p>
+</section>
+
+</main>
+</div>
+</body></html>

@@ -1,0 +1,193 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* Fonts are vendored, not fetched: the editor has to look right offline, and
+   the main process blocks outbound requests from the renderer anyway. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('/fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('/fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+
+/* Expose the tokens Tailwind utilities need; anything more specific is written
+   as plain CSS against the variables, which keeps the class lists readable. */
+@theme inline {
+  --color-app: var(--surface-app);
+  --color-chrome: var(--surface-chrome);
+  --color-raised: var(--surface-raised);
+  --color-hover: var(--surface-hover);
+  --color-active: var(--surface-active);
+  --color-canvas: var(--surface-canvas-matte);
+  --color-hairline: var(--border-hairline);
+  --color-quiet: var(--border-quiet);
+  --color-subtle: var(--border-subtle);
+  --color-strong: var(--border-hover);
+  --color-primary: var(--fg-primary);
+  --color-body: var(--fg-body);
+  --color-secondary: var(--fg-secondary);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
+  --color-ghost: var(--fg-ghost);
+  --color-idle: var(--fg-numeric-idle);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-app);
+  color: var(--fg-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  -webkit-font-smoothing: antialiased;
+  /* This is an application window, not a document: nothing here is selectable
+     text, and a stray drag selection over the canvas reads as a bug. */
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+
+/* Focus is a 1px ring and only where a keyboard user is actually typing. */
+:focus-visible {
+  outline: 1px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
+.eyebrow {
+  font: var(--type-eyebrow);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hover lightens a colour or a border. It does not move, scale, or glow. */
+.photoy-button:not(:disabled).photoy-button--primary:hover {
+  background: #ffffff;
+}
+.photoy-button:not(:disabled).photoy-button--secondary:hover {
+  border-color: var(--border-hover);
+  color: var(--fg-primary);
+}
+.photoy-button:not(:disabled).photoy-button--ghost:hover {
+  background: var(--surface-hover);
+  color: var(--fg-primary);
+}
+.photoy-button:not(:disabled).photoy-button--danger:hover {
+  background: var(--clay-surface-deep);
+}
+.photoy-button:not(:disabled):active {
+  filter: brightness(0.92);
+}
+
+.photoy-hud-button:hover {
+  background: var(--surface-hover);
+  color: var(--fg-primary);
+}
+
+/* The visible slider is drawn in the component; the native input stays on top,
+   fully transparent, so pointer and keyboard behaviour remain the browser's. */
+.photoy-range {
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: default;
+}
+.photoy-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: transparent;
+}
+.photoy-range::-webkit-slider-runnable-track {
+  background: transparent;
+}
+
+.photoy-segment:hover {
+  color: var(--fg-primary);
+}
+
+.photoy-checkbox {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: var(--transition-control);
+}
+.photoy-checkbox:checked {
+  background: var(--fg-primary);
+  border-color: var(--fg-primary);
+}
+.photoy-checkbox:checked::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 7px;
+  margin: 1px auto 0;
+  border: solid var(--fg-on-solid);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.photoy-icon-button:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--fg-primary);
+}
+
+.photoy-panel-reset:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--fg-primary);
+}

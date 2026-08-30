@@ -1,0 +1,89 @@
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import {
+  Channels,
+  Events,
+  type ApiResult,
+  type EngineState,
+  type PhotoyApi,
+  type SessionBootstrap,
+} from '@photoy/ipc';
+import type {
+  DocumentInfo,
+  EditHistory,
+  ExportRequest,
+  ExportResult,
+  Operation,
+  Preview,
+  PreviewRequest,
+} from '@photoy/types';
+import type { EngineDescription } from '@photoy/ipc';
+
+/**
+ * The complete surface the renderer can reach.
+ *
+ * Written out call by call rather than forwarded generically: an `invoke(channel, args)`
+ * passthrough would hand the renderer every channel the main process ever registers,
+ * including ones added later without this file being reviewed.
+ */
+const api: PhotoyApi = {
+  describeEngine: () =>
+    ipcRenderer.invoke(Channels.engineDescribe) as Promise<ApiResult<EngineDescription>>,
+
+  openImageDialog: () =>
+    ipcRenderer.invoke(Channels.imageOpenDialog) as Promise<ApiResult<DocumentInfo | null>>,
+
+  openImagePath: (filePath: string) =>
+    ipcRenderer.invoke(Channels.imageOpenPath, filePath) as Promise<ApiResult<DocumentInfo>>,
+
+  closeImage: (documentId: string) =>
+    ipcRenderer.invoke(Channels.imageClose, documentId) as Promise<ApiResult<{ closed: boolean }>>,
+
+  renderPreview: (request: PreviewRequest) =>
+    ipcRenderer.invoke(Channels.imageRenderPreview, request) as Promise<ApiResult<Preview>>,
+
+  applyEdit: (documentId: string, operation: Operation, replaceTop = false) =>
+    ipcRenderer.invoke(Channels.editApply, documentId, operation, replaceTop) as Promise<
+      ApiResult<EditHistory>
+    >,
+
+  undoEdit: (documentId: string) =>
+    ipcRenderer.invoke(Channels.editUndo, documentId) as Promise<ApiResult<EditHistory>>,
+
+  redoEdit: (documentId: string) =>
+    ipcRenderer.invoke(Channels.editRedo, documentId) as Promise<ApiResult<EditHistory>>,
+
+  resetEdits: (documentId: string) =>
+    ipcRenderer.invoke(Channels.editReset, documentId) as Promise<ApiResult<EditHistory>>,
+
+  chooseExportPath: (suggestedName: string) =>
+    ipcRenderer.invoke(Channels.imageExportDialog, suggestedName) as Promise<ApiResult<string | null>>,
+
+  exportImage: (request: ExportRequest) =>
+    ipcRenderer.invoke(Channels.imageExport, request) as Promise<ApiResult<ExportResult>>,
+
+  bootstrap: () =>
+    ipcRenderer.invoke(Channels.sessionBootstrap) as Promise<ApiResult<SessionBootstrap>>,
+
+  pathForFile: (file: File) => {
+    try {
+      const filePath = webUtils.getPathForFile(file);
+      return filePath.length > 0 ? filePath : null;
+    } catch {
+      return null;
+    }
+  },
+
+  onEngineStateChanged: (listener: (state: EngineState) => void) => {
+    const forward = (_event: unknown, state: EngineState) => listener(state);
+    ipcRenderer.on(Events.engineStateChanged, forward);
+    return () => ipcRenderer.off(Events.engineStateChanged, forward);
+  },
+
+  onOpenRequested: (listener: (filePath: string) => void) => {
+    const forward = (_event: unknown, filePath: string) => listener(filePath);
+    ipcRenderer.on(Events.openRequested, forward);
+    return () => ipcRenderer.off(Events.openRequested, forward);
+  },
+};
+
+contextBridge.exposeInMainWorld('photoy', api);

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+out/
+.tmp/
+*.tsbuildinfo
+
+# Local build tooling: CMake/Ninja virtualenv, vcpkg checkout, and the C++
+# dependencies it builds. All reproducible from scripts/setup-windows.bat.
+.tooling/
+vcpkg_installed/
+
+# The engine binary is published here by scripts/build-native.bat.
+apps/desktop/resources/engine/
+
+# Test fixtures are written by tests/fixtures/generate.mjs.
+tests/fixtures/*.png
+
+.vscode/
+.DS_Store
