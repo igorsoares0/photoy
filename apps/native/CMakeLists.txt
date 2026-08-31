@@ -36,6 +36,7 @@ add_executable(photoy-engine
   src/edit/layer.cpp
   src/edit/mask.cpp
   src/edit/decontaminate.cpp
+  src/edit/patch.cpp
   src/edit/operation.cpp
   src/edit/edit_stack.cpp
   src/edit/render.cpp
@@ -46,6 +47,7 @@ add_executable(photoy-engine
 
   src/ai/model_manager.cpp
   src/ai/segmenter.cpp
+  src/ai/inpainter.cpp
 
   src/jobs/job_queue.cpp
 

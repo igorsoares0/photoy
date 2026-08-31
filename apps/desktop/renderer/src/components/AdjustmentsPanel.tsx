@@ -8,6 +8,8 @@ import { LayersPanel } from './LayersPanel';
 import { TabBar } from './TabBar';
 import { MaskPanel } from './MaskPanel';
 import { MattePanel } from './MattePanel';
+import { BrushPanel } from './BrushPanel';
+import { PatchPanel } from './PatchPanel';
 import { ResizePanel } from './ResizePanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
@@ -121,6 +123,7 @@ export function AdjustmentsPanel(): React.JSX.Element {
   const adjustmentLayer = layer?.kind === 'adjustment' ? layer : null;
   // A matte layer removes; it does not adjust. Its own controls take the panel.
   const matteLayer = layer?.kind === 'matte' ? layer : null;
+  const patchLayer = layer?.kind === 'patch' ? layer : null;
 
   return (
     <aside
@@ -152,7 +155,10 @@ export function AdjustmentsPanel(): React.JSX.Element {
           >
             <ResizePanel />
             <LayersPanel />
-            {matteLayer !== null ? (
+            <BrushPanel />
+            {patchLayer !== null ? (
+              <PatchPanel layer={patchLayer} />
+            ) : matteLayer !== null ? (
               <MattePanel layer={matteLayer} />
             ) : editable ? (
               <>

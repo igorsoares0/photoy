@@ -7,6 +7,7 @@
 #include "color/primaries.h"
 #include "edit/adjustments.h"
 #include "edit/layer.h"
+#include "edit/patch.h"
 #include "edit/operation.h"
 #include "image/image_buffer.h"
 #include "jobs/cancellation.h"
@@ -56,15 +57,19 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
  */
 /// Raster masks, already resampled to the size being rendered.
 using FittedMasks = std::map<std::uint64_t, std::shared_ptr<const MaskBuffer>>;
+/// Patches, already converted and resampled to the size being rendered.
+using FittedPatches = std::map<std::uint64_t, std::shared_ptr<const FittedPatch>>;
 
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
-                        const FittedMasks& masks, color::OutputSpace space,
-                        const CancellationTokenPtr& token, bool flatten = false);
+                        const FittedMasks& masks, const FittedPatches& patches,
+                        color::OutputSpace space, const CancellationTokenPtr& token,
+                        bool flatten = false);
 
 /// The same, at the depth a PNG or TIFF export can keep.
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
-                          const FittedMasks& masks, color::OutputSpace space,
-                          const CancellationTokenPtr& token, bool flatten = false);
+                          const FittedMasks& masks, const FittedPatches& patches,
+                          color::OutputSpace space, const CancellationTokenPtr& token,
+                          bool flatten = false);
 
 /// Evaluates the geometry at full resolution, for export.
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

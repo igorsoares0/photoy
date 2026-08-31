@@ -71,16 +71,18 @@ export class EngineClient {
     }
   }
 
-  request(method, params, coalesceKey) {
+  request(method, params, coalesceKey, payload) {
     const id = this.#nextId++;
     const header = Buffer.from(
       JSON.stringify({ type: 'request', id, method, params, coalesceKey }),
       'utf8',
     );
-    const frame = Buffer.alloc(4 + header.length + 4);
+    const body = payload ?? Buffer.alloc(0);
+    const frame = Buffer.alloc(4 + header.length + 4 + body.length);
     frame.writeUInt32LE(header.length, 0);
     header.copy(frame, 4);
-    frame.writeUInt32LE(0, 4 + header.length);
+    frame.writeUInt32LE(body.length, 4 + header.length);
+    body.copy(frame, 4 + header.length + 4);
 
     const promise = new Promise((resolve) => {
       this.#pending.set(id, resolve);
@@ -92,8 +94,8 @@ export class EngineClient {
   }
 
   /** Resolves to the result, or throws with the engine's own error detail. */
-  async call(method, params, coalesceKey) {
-    const { header, payload } = await this.request(method, params, coalesceKey);
+  async call(method, params, coalesceKey, body) {
+    const { header, payload } = await this.request(method, params, coalesceKey, body);
     if (header.ok !== true) {
       const error = header.error ?? {};
       throw new Error(`${method} failed: ${error.code} - ${error.message} (${error.detail ?? ''})`);

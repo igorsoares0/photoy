@@ -34,7 +34,7 @@ export interface PreviewState {
   scale: number;
 }
 
-export type Busy = 'opening' | 'rendering' | 'exporting' | 'segmenting' | null;
+export type Busy = 'opening' | 'rendering' | 'exporting' | 'segmenting' | 'filling' | null;
 
 /** What the export dialog collects before a destination is chosen. */
 export interface ExportOptions {
@@ -104,6 +104,38 @@ interface EditorState {
    * leaving a soft picture on screen once the hand comes off.
    */
   interacting: boolean;
+
+  /**
+   * The mask brush: null when the tool is off, its settings when it is on.
+   *
+   * A hard round brush and nothing else. Overlapping opaque strokes are
+   * idempotent, which is what keeps a stroke free of the seams a soft brush
+   * accumulates where it crosses itself - and a hard mask is what inpainting
+   * wants anyway. Softness, if it is ever wanted, is already available as the
+   * mask's own black and white points.
+   */
+  brush: { size: number; mode: 'add' | 'erase' } | null;
+  /**
+   * Starts an object removal: a patch layer, selected, with the brush on.
+   *
+   * The layer's mask is both what marks the object and what blends the fill,
+   * which is what lets the mark be trimmed afterwards without the model running
+   * again. Until it is filled the layer draws nothing, so the picture does not
+   * change while you are still deciding what to paint over.
+   */
+  beginObjectRemoval(): Promise<void>;
+  /** Runs the model over what is marked and hangs the result on the layer. */
+  fillMarked(layerId: number): Promise<void>;
+  beginBrush(): void;
+  endBrush(): void;
+  setBrush(patch: Partial<{ size: number; mode: 'add' | 'erase' }>): void;
+  /** Hands a painted mask to the engine and hangs it on the layer. */
+  applyPaintedMask(
+    layerId: number,
+    width: number,
+    height: number,
+    coverage: Uint8Array,
+  ): Promise<void>;
   requestPreview(targetWidth: number, targetHeight: number): Promise<void>;
 
   applyEdit(operation: Operation): Promise<void>;
@@ -290,6 +322,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   fitRequest: 0,
   fitOnRequest: false,
   interacting: false,
+  brush: null,
 
   setEngineState: (engineState) => set({ engineState }),
 
@@ -588,6 +621,80 @@ export const useEditor = create<EditorState>((set, get) => ({
     );
   },
 
+  beginObjectRemoval: async () => {
+    const document = get().document;
+    if (document === null) return;
+
+    const before = get().history?.layers.map((layer) => layer.id) ?? [];
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'addLayer',
+        layerKind: 'patch',
+        name: 'Remoção',
+      }),
+    );
+    const created = get().history?.layers.find((layer) => !before.includes(layer.id));
+    if (created === undefined) return;
+    set({ selectedLayerId: created.id, brush: get().brush ?? { size: 6, mode: 'add' }, cropRect: null });
+  },
+
+  fillMarked: async (layerId) => {
+    const document = get().document;
+    const layer = get().history?.layers.find((entry) => entry.id === layerId);
+    if (document === null || layer === undefined) return;
+    if (layer.mask.kind !== 'raster' || layer.mask.raster === 0) return;
+
+    set({ busy: 'filling', error: null });
+    const filled = await window.photoy.inpaint(document.id, layer.mask.raster);
+    if (!filled.ok) {
+      set({ busy: null, error: filled.error });
+      return;
+    }
+    set({ busy: null });
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'setLayerPatch',
+        layerId,
+        patch: filled.value.patch,
+        patchWidth: filled.value.documentWidth,
+        patchHeight: filled.value.documentHeight,
+      }),
+    );
+  },
+
+  beginBrush: () => set({ brush: get().brush ?? { size: 6, mode: 'add' }, cropRect: null }),
+  endBrush: () => set({ brush: null }),
+  setBrush: (patch) => {
+    const current = get().brush;
+    if (current === null) return;
+    set({ brush: { ...current, ...patch } });
+  },
+
+  applyPaintedMask: async (layerId, width, height, coverage) => {
+    const document = get().document;
+    if (document === null) return;
+
+    const stored = await window.photoy.storeMask(document.id, width, height, coverage);
+    if (!stored.ok) {
+      set({ error: stored.error });
+      return;
+    }
+    // The mask belongs to the crop and the orientation, not to the output size,
+    // so it is recorded against the natural one.
+    const history = get().history;
+    await get().setLayerMask(layerId, {
+      ...NO_MASK,
+      kind: 'raster',
+      raster: stored.value.raster,
+      rasterWidth: history?.naturalWidth ?? width,
+      rasterHeight: history?.naturalHeight ?? height,
+    });
+  },
+
   setLayerDecontaminate: async (id, amount, continuing) => {
     const document = get().document;
     if (document === null) return;
@@ -662,7 +769,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   beginCrop: () => {
     const size = renderedSize(get());
     if (size === null) return;
-    set({ cropRect: { x: 0, y: 0, width: size.width, height: size.height }, cropAspect: null });
+    set({
+      cropRect: { x: 0, y: 0, width: size.width, height: size.height },
+      cropAspect: null,
+      brush: null,
+    });
   },
 
   setCropRect: (cropRect) => set({ cropRect }),

@@ -32,8 +32,12 @@ struct CatalogueEntry {
   const char* source;
 };
 
-constexpr std::array<CatalogueEntry, 1> kCatalogue{{
+constexpr std::array<CatalogueEntry, 2> kCatalogue{{
     {"segmentation", "u2netp.onnx", "Apache-2.0", "U^2-Net"},
+    // LaMa: advimman/lama is Apache-2.0 with no separate clause for the
+    // weights, and OpenCV redistributes this export under the same, checked
+    // against the LICENSE in their repository rather than a summary of it.
+    {"inpainting", "lama.onnx", "Apache-2.0", "LaMa (big-lama)"},
 }};
 
 std::wstring Widen(const std::string& utf8) {
@@ -59,9 +63,12 @@ struct Session::Impl {
   Ort::AllocatorWithDefaultOptions allocator;
   std::string input_name;
   std::string output_name;
+  std::vector<std::string> input_names;
 
   Impl(const std::string& path, const std::string& name)
-      : env(ORT_LOGGING_LEVEL_WARNING, name.c_str()),
+      // Errors only: this build of LaMa carries unused initialisers, and the
+      // runtime says so once per initialiser, which buries anything real.
+      : env(ORT_LOGGING_LEVEL_ERROR, name.c_str()),
         options(),
         session(nullptr) {
     options.SetIntraOpNumThreads(0);
@@ -73,6 +80,9 @@ struct Session::Impl {
 #endif
     input_name = session.GetInputNameAllocated(0, allocator).get();
     output_name = session.GetOutputNameAllocated(0, allocator).get();
+    for (std::size_t i = 0; i < session.GetInputCount(); ++i) {
+      input_names.emplace_back(session.GetInputNameAllocated(i, allocator).get());
+    }
   }
 };
 
@@ -85,6 +95,7 @@ Session::Session(const std::string& path, const std::string& name) {
   }
   const auto shape = impl_->session.GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
   if (shape.size() == 4 && shape[2] > 0) input_side_ = static_cast<int>(shape[2]);
+  input_names_ = impl_->input_names;
 }
 
 Session::~Session() = default;
@@ -103,6 +114,46 @@ std::vector<float> Session::Run(const std::vector<float>& input) {
 
     const float* values = outputs.front().GetTensorData<float>();
     const std::size_t count = static_cast<std::size_t>(input_side_) * input_side_;
+    return std::vector<float>(values, values + count);
+  } catch (const Ort::Exception& failure) {
+    throw EngineException(error_code::kInternalError, "The model failed to run", failure.what());
+  }
+}
+
+std::vector<float> Session::RunNamed(const std::vector<std::string>& names,
+                                    const std::vector<std::vector<float>>& inputs,
+                                    const std::vector<std::array<std::int64_t, 4>>& shapes) {
+  if (names.size() != inputs.size() || names.size() != shapes.size()) {
+    throw EngineException(error_code::kInternalError, "Malformed model call",
+                          "inputs, names and shapes disagree");
+  }
+  for (const std::string& name : names) {
+    if (std::find(input_names_.begin(), input_names_.end(), name) == input_names_.end()) {
+      throw EngineException(error_code::kInternalError, "The model does not take that input",
+                            "no input named " + name);
+    }
+  }
+
+  auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  std::vector<const char*> input_names;
+  std::vector<Ort::Value> tensors;
+  input_names.reserve(names.size());
+  tensors.reserve(inputs.size());
+
+  try {
+    for (std::size_t i = 0; i < names.size(); ++i) {
+      input_names.push_back(names[i].c_str());
+      tensors.push_back(Ort::Value::CreateTensor<float>(
+          memory, const_cast<float*>(inputs[i].data()), inputs[i].size(), shapes[i].data(),
+          shapes[i].size()));
+    }
+    const char* output_names[] = {impl_->output_name.c_str()};
+    auto outputs = impl_->session.Run(Ort::RunOptions{nullptr}, input_names.data(), tensors.data(),
+                                      tensors.size(), output_names, 1);
+
+    const Ort::Value& first = outputs.front();
+    const std::size_t count = first.GetTensorTypeAndShapeInfo().GetElementCount();
+    const float* values = first.GetTensorData<float>();
     return std::vector<float>(values, values + count);
   } catch (const Ort::Exception& failure) {
     throw EngineException(error_code::kInternalError, "The model failed to run", failure.what());

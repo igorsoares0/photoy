@@ -13,6 +13,8 @@ export type IconName =
   | 'flipVertical'
   | 'crop'
   | 'subject'
+  | 'brush'
+  | 'eraser'
   | 'undo'
   | 'redo'
   | 'reset';
@@ -40,6 +42,12 @@ const PATHS: Record<IconName, string[]> = {
   // Head and shoulders: the subject is what background removal keeps, so the
   // icon draws that rather than the thing being taken away.
   subject: ['M19 21a7 7 0 0 0-14 0', 'M16 8a4 4 0 1 1-8 0 4 4 0 1 1 8 0'],
+  brush: ['m15 4 5 5', 'M9.5 14.5 3 21l2-6 11-11a2.8 2.8 0 0 1 4 4L9 18'],
+  eraser: [
+    'm7 21-4.3-4.3a2 2 0 0 1 0-2.8l9.6-9.6a2 2 0 0 1 2.8 0l5.6 5.6a2 2 0 0 1 0 2.8L13 21',
+    'M22 21H7',
+    'm5 11 9 9',
+  ],
   undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
   redo: ['m15 14 5-5-5-5', 'M20 9H9.5a5.5 5.5 0 0 0 0 11H13'],
   reset: ['M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8', 'M3 3v5h5'],

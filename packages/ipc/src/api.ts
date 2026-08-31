@@ -37,11 +37,33 @@ export interface RecoveryOffer {
 }
 
 /** What is open, and whether it has changes the project file does not have. */
+/** A stored mask handed back with its pixels. */
+export interface StoredMask {
+  raster: number;
+  width: number;
+  height: number;
+  coverage: Uint8Array;
+}
+
 export interface SegmentResult {
   documentId: string;
   raster: number;
   width: number;
   height: number;
+}
+
+/** Where a model filled something in, and the pixels it kept to do it. */
+export interface InpaintResult {
+  documentId: string;
+  patch: number;
+  /** The window, in natural document coordinates. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The natural document size the window was measured against. */
+  documentWidth: number;
+  documentHeight: number;
 }
 
 export interface ProjectState {
@@ -90,6 +112,32 @@ export interface PhotoyApi {
    * document size it was made for.
    */
   segment(documentId: string): Promise<ApiResult<SegmentResult>>;
+
+  /**
+   * Hands a painted mask to the engine and gets back its identifier.
+   *
+   * One byte of coverage per pixel, rows top to bottom, no padding - the same
+   * shape a segmented mask has, because the brush and the model are producing
+   * the same kind of thing and nothing downstream should be able to tell them
+   * apart.
+   */
+  storeMask(
+    documentId: string,
+    width: number,
+    height: number,
+    coverage: Uint8Array,
+  ): Promise<ApiResult<SegmentResult>>;
+
+  /** Reads a stored mask back, so a brush can carry on from what is there. */
+  fetchMask(documentId: string, raster: number): Promise<ApiResult<StoredMask>>;
+
+  /**
+   * Fills what a mask marks, using what surrounds it.
+   *
+   * The pixels are kept in the engine; what comes back is the identifier and
+   * the window they cover.
+   */
+  inpaint(documentId: string, raster: number): Promise<ApiResult<InpaintResult>>;
 
   applyEdit(
     documentId: string,

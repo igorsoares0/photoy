@@ -7,8 +7,10 @@ import {
   type OpenedProject,
   type PhotoyApi,
   type ProjectState,
+  type InpaintResult,
   type SegmentResult,
   type SessionBootstrap,
+  type StoredMask,
 } from '@photoy/ipc';
 import type {
   DocumentInfo,
@@ -46,6 +48,14 @@ const api: PhotoyApi = {
 
   segment: (documentId: string) =>
     ipcRenderer.invoke(Channels.aiSegment, documentId) as Promise<ApiResult<SegmentResult>>,
+  storeMask: (documentId: string, width: number, height: number, coverage: Uint8Array) =>
+    ipcRenderer.invoke(Channels.maskStore, documentId, width, height, coverage) as Promise<
+      ApiResult<SegmentResult>
+    >,
+  fetchMask: (documentId: string, raster: number) =>
+    ipcRenderer.invoke(Channels.maskFetch, documentId, raster) as Promise<ApiResult<StoredMask>>,
+  inpaint: (documentId: string, raster: number) =>
+    ipcRenderer.invoke(Channels.aiInpaint, documentId, raster) as Promise<ApiResult<InpaintResult>>,
 
   applyEdit: (documentId: string, operation: Operation, replaceTop = false) =>
     ipcRenderer.invoke(Channels.editApply, documentId, operation, replaceTop) as Promise<

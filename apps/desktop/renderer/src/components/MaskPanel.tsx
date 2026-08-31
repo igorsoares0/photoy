@@ -109,7 +109,7 @@ export function MaskPanel({ layer }: { layer: Layer }): React.JSX.Element {
         >
           {stale
             ? 'a foto mudou de forma — refaça a seleção'
-            : `seg · ${mask.rasterWidth} × ${mask.rasterHeight}`}
+            : `raster · ${mask.rasterWidth} × ${mask.rasterHeight}`}
         </span>
       ) : null}
 

@@ -57,6 +57,8 @@ struct EncodeOptions {
   std::vector<Layer> layers;
   /// Raster masks the layers refer to, at full resolution.
   FittedMasks masks;
+  /// Patches the layers draw, converted and resampled to full resolution.
+  FittedPatches patches;
 };
 
 std::vector<std::uint8_t> EncodeJpeg(const OutputImage& image, const EncodeOptions& options);

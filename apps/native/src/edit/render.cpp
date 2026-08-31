@@ -68,7 +68,7 @@ void ApplyInPlace(Image16& image, const CompiledLayer& layer, const Cancellation
 
 /// The visible layers that actually change something, bottom first.
 std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const FittedMasks& masks,
-                                   int width, int height) {
+                                   const FittedPatches& patches, int width, int height) {
   std::vector<CompiledLayer> compiled;
   for (const Layer& layer : layers) {
     if (layer.kind == LayerKind::kBackground || !layer.visible) continue;
@@ -77,7 +77,12 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
       const auto found = masks.find(layer.mask.raster);
       if (found != masks.end()) raster = found->second.get();
     }
-    CompiledLayer candidate(layer, width, height, raster);
+    const FittedPatch* fitted = nullptr;
+    if (layer.kind == LayerKind::kPatch) {
+      const auto found = patches.find(layer.patch);
+      if (found != patches.end()) fitted = found->second.get();
+    }
+    CompiledLayer candidate(layer, width, height, raster, fitted);
     if (candidate.transparent()) continue;
     compiled.push_back(std::move(candidate));
   }
@@ -86,12 +91,14 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
 
 template <typename Out>
 TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
-                          const FittedMasks& masks, color::OutputSpace space,
-                          const CancellationTokenPtr& token, bool flatten) {
+                          const FittedMasks& masks, const FittedPatches& patches,
+                          color::OutputSpace space, const CancellationTokenPtr& token,
+                          bool flatten) {
   // Masks are described in fractions of the document, so they compile against
   // whatever resolution this render happens to be: the same mask at preview
   // size and at full size, with no downscale in between.
-  std::vector<CompiledLayer> compiled = Compile(layers, masks, base.width(), base.height());
+  std::vector<CompiledLayer> compiled =
+      Compile(layers, masks, patches, base.width(), base.height());
   TImageBuffer<Out> result = TImageBuffer<Out>::Create(base.width(), base.height());
 
   if (compiled.empty()) {
@@ -174,15 +181,17 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
 }
 
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
-                        const FittedMasks& masks, color::OutputSpace space,
-                        const CancellationTokenPtr& token, bool flatten) {
-  return Compose<std::uint8_t>(base, layers, masks, space, token, flatten);
+                        const FittedMasks& masks, const FittedPatches& patches,
+                        color::OutputSpace space, const CancellationTokenPtr& token,
+                        bool flatten) {
+  return Compose<std::uint8_t>(base, layers, masks, patches, space, token, flatten);
 }
 
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
-                          const FittedMasks& masks, color::OutputSpace space,
-                          const CancellationTokenPtr& token, bool flatten) {
-  return Compose<std::uint16_t>(base, layers, masks, space, token, flatten);
+                          const FittedMasks& masks, const FittedPatches& patches,
+                          color::OutputSpace space, const CancellationTokenPtr& token,
+                          bool flatten) {
+  return Compose<std::uint16_t>(base, layers, masks, patches, space, token, flatten);
 }
 
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

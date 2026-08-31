@@ -128,6 +128,12 @@ json ToJson(const Operation& operation) {
       entry["color"] = json{{"r", operation.color.r}, {"g", operation.color.g},
                             {"b", operation.color.b}};
       break;
+    case OperationKind::kSetLayerPatch:
+      entry["layerId"] = operation.target_layer;
+      entry["patch"] = operation.patch;
+      entry["patchWidth"] = operation.target_width;
+      entry["patchHeight"] = operation.target_height;
+      break;
     case OperationKind::kResize:
       entry["width"] = operation.target_width;
       entry["height"] = operation.target_height;
@@ -190,9 +196,21 @@ Operation FromJson(const json& value) {
   if (kind == "addLayer") {
     operation.kind = OperationKind::kAddLayer;
     operation.name = value.value("name", std::string{});
-    operation.layer_kind = value.value("layerKind", std::string("adjustment")) == "matte"
-                               ? LayerKind::kMatte
-                               : LayerKind::kAdjustment;
+    operation.layer_kind = LayerKindFromName(value.value("layerKind", std::string("adjustment")));
+    // A background layer is the decoded original and cannot be added.
+    if (operation.layer_kind == LayerKind::kBackground) {
+      operation.layer_kind = LayerKind::kAdjustment;
+    }
+    return operation;
+  }
+  if (kind == "setLayerPatch") {
+    operation.kind = OperationKind::kSetLayerPatch;
+    operation.target_layer = LayerId(value);
+    operation.patch = value.contains("patch") && value.at("patch").is_number_unsigned()
+                          ? value.at("patch").get<std::uint64_t>()
+                          : 0;
+    operation.target_width = OptionalInt(value, "patchWidth", 0);
+    operation.target_height = OptionalInt(value, "patchHeight", 0);
     return operation;
   }
   if (kind == "setLayerFill") {

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "edit/mask.h"
+#include "edit/patch.h"
 #include "edit/operation.h"
 
 namespace photoy {
@@ -42,6 +43,14 @@ struct Project {
    * the manifest small and keeps each mask something a person can look at.
    */
   std::vector<std::pair<std::uint64_t, MaskBuffer>> masks;
+  /**
+   * Patches a model invented, by identifier.
+   *
+   * The second thing here that is pixels. They go into `patches/` as ordinary
+   * sRGB PNGs, which is exactly what the model produced, so a person can open
+   * one and see what was painted into the photograph.
+   */
+  std::vector<std::pair<std::uint64_t, PatchBuffer>> patches;
 };
 
 /// Current on-disk version. Bumped when the layout changes incompatibly.

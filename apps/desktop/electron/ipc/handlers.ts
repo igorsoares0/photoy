@@ -6,6 +6,7 @@ import {
   type ApiResult,
   type OpenedProject,
   type ProjectState,
+  type InpaintResult,
   type SegmentResult,
 } from '@photoy/ipc';
 import type { DocumentInfo, EditHistory, ExportResult, Operation, PreviewInfo } from '@photoy/types';
@@ -258,6 +259,34 @@ export function registerIpcHandlers(
 
   handle(Channels.aiSegment, async (documentId: string) => {
     const { result } = await engine.call<SegmentResult>('ai.segment', { documentId });
+    return result;
+  });
+
+  handle(
+    Channels.maskStore,
+    async (documentId: string, width: number, height: number, coverage: Uint8Array) => {
+      const { result } = await engine.call<SegmentResult>(
+        'mask.store',
+        { documentId, width, height },
+        undefined,
+        Buffer.from(coverage.buffer, coverage.byteOffset, coverage.byteLength),
+      );
+      return result;
+    },
+  );
+
+  handle(Channels.maskFetch, async (documentId: string, raster: number) => {
+    const { result, payload } = await engine.call<SegmentResult>('mask.fetch', {
+      documentId,
+      raster,
+    });
+    // Copied out of the pipe buffer: the array crosses to the renderer and must
+    // not be a view onto memory the reader is about to reuse.
+    return { ...result, coverage: new Uint8Array(payload) };
+  });
+
+  handle(Channels.aiInpaint, async (documentId: string, raster: number) => {
+    const { result } = await engine.call<InpaintResult>('ai.inpaint', { documentId, raster });
     return result;
   });
 

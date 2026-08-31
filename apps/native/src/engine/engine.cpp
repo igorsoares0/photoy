@@ -12,6 +12,7 @@
 #include "core/json.h"
 #include "edit/render.h"
 #include "edit/serialize.h"
+#include "ai/inpainter.h"
 #include "ai/segmenter.h"
 #include "project/project.h"
 #include "export/encoder.h"
@@ -72,6 +73,9 @@ json DescribeLayer(const Layer& layer) {
               {"fill", FillKindName(layer.fill)},
               {"color", json{{"r", layer.color.r}, {"g", layer.color.g}, {"b", layer.color.b}}},
               {"decontaminate", layer.decontaminate},
+              {"patch", layer.patch},
+              {"patchWidth", layer.patch_width},
+              {"patchHeight", layer.patch_height},
               {"adjustments", DescribeAdjustments(layer.adjustments)},
               {"mask",
                json{{"kind", MaskKindName(layer.mask.kind)},
@@ -213,7 +217,8 @@ void Engine::EmitJobState(std::int64_t id, const char* state) const {
   transport_.Write(frame);
 }
 
-void Engine::Dispatch(const nlohmann::json& header) {
+void Engine::Dispatch(const nlohmann::json& header,
+                      const std::vector<std::uint8_t>& payload) {
   const std::int64_t id = header.value("id", static_cast<std::int64_t>(0));
   const std::string method = header.value("method", std::string{});
   const json params = header.contains("params") ? header.at("params") : json::object();
@@ -231,6 +236,12 @@ void Engine::Dispatch(const nlohmann::json& header) {
     if (method == "edit.reset") return transport_.Write(MakeSuccess(id, ResetEdits(params)));
     if (method == "edit.history") return transport_.Write(MakeSuccess(id, EditHistory(params)));
     if (method == "job.cancel") return transport_.Write(MakeSuccess(id, CancelJob(params)));
+    // Storing a painted mask is a memcpy, so it answers here rather than
+    // queueing behind a render the brush is waiting on.
+    if (method == "mask.store") {
+      return transport_.Write(MakeSuccess(id, StoreMask(params, payload)));
+    }
+    if (method == "mask.fetch") return transport_.Write(FetchMask(id, params));
   } catch (const EngineException& failure) {
     log::Warn(method + " failed: " + failure.code() + " " + failure.detail());
     return transport_.Write(MakeFailure(id, failure.code(), failure.message(), failure.detail()));
@@ -240,7 +251,8 @@ void Engine::Dispatch(const nlohmann::json& header) {
         MakeFailure(id, error_code::kInternalError, "Unexpected engine failure", failure.what()));
   }
 
-  const bool known = method == "image.open" || method == "image.renderPreview" ||
+  const bool known = method == "ai.inpaint" || method == "image.open" ||
+                     method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
                      method == "project.save" || method == "ai.segment";
   if (!known) {
@@ -264,6 +276,8 @@ void Engine::Dispatch(const nlohmann::json& header) {
                        response = SaveProjectJob(id, params);
                      } else if (method == "ai.segment") {
                        response = SegmentJob(id, params, token);
+                     } else if (method == "ai.inpaint") {
+                       response = InpaintJob(id, params, token);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -304,8 +318,9 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
       return estimate::Open(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
-    if (method == "ai.segment") {
-      return ai::ModelManager::MemoryEstimate("segmentation");
+    if (method == "ai.segment" || method == "ai.inpaint") {
+      return ai::ModelManager::MemoryEstimate(method == "ai.inpaint" ? "inpainting"
+                                                                    : "segmentation");
     }
     if (method == "project.save") {
       // Saving holds the archive and a copy of it in memory at the same time.
@@ -333,6 +348,50 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
   }
 }
 
+nlohmann::json Engine::StoreMask(const json& params, const std::vector<std::uint8_t>& payload) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const int width = OptionalInt(params, "width", 0);
+  const int height = OptionalInt(params, "height", 0);
+  if (width <= 0 || height <= 0) {
+    throw EngineException(error_code::kInvalidRequest, "Invalid mask size",
+                          std::to_string(width) + "x" + std::to_string(height));
+  }
+  // The header claims a size; the payload has to actually be that size, or the
+  // rows would be read at the wrong offsets and the mask would shear.
+  const std::size_t expected = static_cast<std::size_t>(width) * height;
+  if (payload.size() != expected) {
+    throw EngineException(error_code::kInvalidRequest, "Mask payload does not match its size",
+                          std::to_string(payload.size()) + " bytes for " + std::to_string(expected));
+  }
+
+  MaskBuffer buffer;
+  buffer.width = width;
+  buffer.height = height;
+  buffer.coverage = payload;
+  const std::uint64_t raster = document->StoreMask(std::move(buffer));
+  return json{{"documentId", document->id}, {"raster", raster},
+              {"width", width}, {"height", height}};
+}
+
+protocol::Frame Engine::FetchMask(std::int64_t id, const json& params) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::uint64_t raster = params.contains("raster") && params.at("raster").is_number_unsigned()
+                                   ? params.at("raster").get<std::uint64_t>()
+                                   : 0;
+  const std::shared_ptr<const MaskBuffer> found = document->FindMask(raster);
+  if (found == nullptr || found->empty()) {
+    throw EngineException(error_code::kInvalidRequest, "No such mask",
+                          "raster " + std::to_string(raster) + " is not stored on this document");
+  }
+
+  protocol::Frame frame = MakeSuccess(id, json{{"documentId", document->id},
+                                               {"raster", raster},
+                                               {"width", found->width},
+                                               {"height", found->height}});
+  frame.payload = found->coverage;
+  return frame;
+}
+
 nlohmann::json Engine::Describe() const {
   const JobQueueStats stats = jobs_.Stats();
   return json{{"name", kEngineName},
@@ -345,8 +404,8 @@ nlohmann::json Engine::Describe() const {
                json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "resize", "adjust",
                             "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",
                             "setLayerOpacity", "setLayerBlend", "setLayerMask",
-                            "setLayerFill", "setLayerDecontaminate"})},
-              {"layerKinds", json::array({"background", "adjustment", "matte"})},
+                            "setLayerFill", "setLayerDecontaminate", "setLayerPatch"})},
+              {"layerKinds", json::array({"background", "adjustment", "matte", "patch"})},
               {"fillKinds", json::array({"transparent", "color"})},
               {"blendModes",
                json::array({"normal", "multiply", "screen", "overlay", "soft-light"})},
@@ -446,6 +505,9 @@ protocol::Frame Engine::OpenProject(std::int64_t id, const json& params) {
   const std::shared_ptr<Document> document = documents_.OpenFromMemory(
       std::move(project.source.bytes), project.source.file_name, project.source.origin_path);
   for (auto& [mask_id, buffer] : project.masks) document->RestoreMask(mask_id, std::move(buffer));
+  for (auto& [patch_id, buffer] : project.patches) {
+    document->RestorePatch(patch_id, std::move(buffer));
+  }
   {
     const std::lock_guard<std::mutex> lock(document->stack_mutex);
     document->stack.Load(std::move(project.operations), project.cursor);
@@ -468,6 +530,9 @@ protocol::Frame Engine::SaveProjectJob(std::int64_t id, const json& params) {
     const std::lock_guard<std::mutex> lock(document->stack_mutex);
     project.operations = document->stack.All();
     project.cursor = document->stack.cursor();
+  }
+  for (const auto& [patch_id, buffer] : document->AllPatches()) {
+    if (buffer != nullptr) project.patches.emplace_back(patch_id, *buffer);
   }
   for (const auto& [mask_id, buffer] : document->AllMasks()) {
     if (buffer != nullptr) project.masks.emplace_back(mask_id, *buffer);
@@ -506,6 +571,31 @@ FittedMasks Engine::FitMasks(Document& document, const PreviewPlan& plan,
   return fitted;
 }
 
+FittedPatches Engine::FitPatches(Document& document, const PreviewPlan& plan,
+                                 const std::vector<Layer>& layers) const {
+  FittedPatches fitted;
+  for (const Layer& layer : layers) {
+    if (layer.kind != LayerKind::kPatch || layer.patch == 0) continue;
+    // Same rule as a raster mask: a patch belongs to the crop and the
+    // orientation it was made against, and a resize is not that case.
+    if (layer.patch_width != plan.geometry.NaturalWidth() ||
+        layer.patch_height != plan.geometry.NaturalHeight()) {
+      continue;
+    }
+    if (fitted.count(layer.patch) != 0) continue;
+
+    std::shared_ptr<const FittedPatch> ready = document.CachedFittedPatch(plan, layer.patch);
+    if (ready == nullptr) {
+      const std::shared_ptr<const PatchBuffer> full = document.FindPatch(layer.patch);
+      if (full == nullptr) continue;
+      ready = std::make_shared<const FittedPatch>(FitPatch(*full, plan.width, plan.height));
+      document.CacheFittedPatch(plan, layer.patch, ready);
+    }
+    fitted.emplace(layer.patch, std::move(ready));
+  }
+  return fitted;
+}
+
 protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
                                    const CancellationTokenPtr& token) {
   const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
@@ -530,6 +620,52 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
                               {"raster", raster},
                               {"width", plan.geometry.NaturalWidth()},
                               {"height", plan.geometry.NaturalHeight()}});
+}
+
+protocol::Frame Engine::InpaintJob(std::int64_t id, const json& params,
+                                   const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::uint64_t raster = params.contains("raster") && params.at("raster").is_number_unsigned()
+                                   ? params.at("raster").get<std::uint64_t>()
+                                   : 0;
+  const std::shared_ptr<const MaskBuffer> mask = document->FindMask(raster);
+  if (mask == nullptr || mask->empty()) {
+    throw EngineException(error_code::kInvalidRequest, "No such mask",
+                          "raster " + std::to_string(raster) + " is not stored on this document");
+  }
+
+  // Inpainting works on the document as it stands, geometry included, so what
+  // it fills lines up with what is on screen rather than with the decoded file.
+  const std::vector<Operation> operations = document->ActiveOperations();
+  const PreviewPlan plan = PlanPreview(operations, document->source.width(),
+                                       document->source.height(), document->source.width(),
+                                       document->source.height());
+  const Image16 rendered = RenderGeometry(document->source, plan, token);
+
+  const std::shared_ptr<ai::Session> session = models_.Acquire("inpainting");
+  const ai::Patch patch = ai::Inpaint(rendered, *mask, *session, token);
+  log::Info("inpainted " + document->id + " over " + std::to_string(patch.region.width) + "x" +
+            std::to_string(patch.region.height));
+
+  PatchBuffer stored;
+  stored.region = patch.region;
+  stored.document_width = plan.geometry.NaturalWidth();
+  stored.document_height = plan.geometry.NaturalHeight();
+  stored.pixels = std::move(patch.pixels);
+  const int patch_width = stored.pixels.width();
+  const int patch_height = stored.pixels.height();
+  const std::uint64_t identifier = document->StorePatch(std::move(stored));
+
+  return MakeSuccess(id, json{{"documentId", document->id},
+                              {"patch", identifier},
+                              {"x", patch.region.x},
+                              {"y", patch.region.y},
+                              {"width", patch.region.width},
+                              {"height", patch.region.height},
+                              {"patchWidth", patch_width},
+                              {"patchHeight", patch_height},
+                              {"documentWidth", plan.geometry.NaturalWidth()},
+                              {"documentHeight", plan.geometry.NaturalHeight()}});
 }
 
 protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
@@ -557,7 +693,8 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
 
   const std::vector<Layer> layers = FoldLayers(operations);
   Image8 pixels = ComposeToOutput8(*base, layers, FitMasks(*document, plan, layers),
-                                   color::OutputSpace::kSrgb, token);
+                                   FitPatches(*document, plan, layers), color::OutputSpace::kSrgb,
+                                   token);
 
   if (log::Enabled(log::Level::kDebug)) {
     const double elapsed = std::chrono::duration<double, std::milli>(
@@ -603,15 +740,36 @@ protocol::Frame Engine::ExportImage(std::int64_t id, const json& params,
 
   const std::vector<Operation> operations = document->ActiveOperations();
   options.layers = FoldLayers(operations);
+
+  // Masks and patches are looked up by pixel, so they have to arrive at the
+  // size being rendered. A painted mask is stored at up to 2048 on its long
+  // side and a patch at the model's own resolution, so neither is already
+  // there: handing them over unresampled would read the rows at the wrong
+  // offsets and put the mask somewhere else entirely.
+  const Geometry geometry =
+      FoldGeometry(operations, document->source.width(), document->source.height());
+  const int output_width = geometry.OutputWidth();
+  const int output_height = geometry.OutputHeight();
   for (const Layer& layer : options.layers) {
-    if (layer.mask.kind != MaskKind::kRaster || layer.mask.raster == 0) continue;
-    if (layer.mask.raster_width != document->source.width() ||
-        layer.mask.raster_height != document->source.height()) {
-      // An export at full resolution needs the mask at that size; the stored
-      // one is already there when the geometry has not moved since.
+    if (layer.mask.kind == MaskKind::kRaster && layer.mask.raster != 0 &&
+        layer.mask.raster_width == geometry.NaturalWidth() &&
+        layer.mask.raster_height == geometry.NaturalHeight() &&
+        options.masks.count(layer.mask.raster) == 0) {
+      const std::shared_ptr<const MaskBuffer> full = document->FindMask(layer.mask.raster);
+      if (full != nullptr) {
+        options.masks.emplace(layer.mask.raster, std::make_shared<const MaskBuffer>(
+                                                     Resize(*full, output_width, output_height)));
+      }
     }
-    const std::shared_ptr<const MaskBuffer> full = document->FindMask(layer.mask.raster);
-    if (full != nullptr) options.masks.emplace(layer.mask.raster, full);
+    if (layer.kind == LayerKind::kPatch && layer.patch != 0 &&
+        layer.patch_width == geometry.NaturalWidth() &&
+        layer.patch_height == geometry.NaturalHeight() && options.patches.count(layer.patch) == 0) {
+      const std::shared_ptr<const PatchBuffer> full = document->FindPatch(layer.patch);
+      if (full != nullptr) {
+        options.patches.emplace(layer.patch, std::make_shared<const FittedPatch>(
+                                                 FitPatch(*full, output_width, output_height)));
+      }
+    }
   }
 
   const auto started = std::chrono::steady_clock::now();

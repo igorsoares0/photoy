@@ -27,6 +27,7 @@ enum class OperationKind {
   kSetLayerMask,
   kSetLayerFill,
   kSetLayerDecontaminate,
+  kSetLayerPatch,
 };
 
 /**
@@ -70,8 +71,11 @@ struct Operation {
   /// kSetLayerMask: where the layer applies.
   Mask mask;
   /// kResize: the size the document should have from here on.
+  /// kSetLayerPatch also uses these, for the size the patch was made against.
   int target_width = 0;
   int target_height = 0;
+  /// kSetLayerPatch: which stored patch the layer draws.
+  std::uint64_t patch = 0;
 
   /// Stable identifier, assigned on apply, so the host can address history entries.
   std::uint64_t id = 0;

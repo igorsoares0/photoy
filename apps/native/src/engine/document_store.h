@@ -10,6 +10,7 @@
 #include "color/profile.h"
 #include "decoder/decoder.h"
 #include "edit/edit_stack.h"
+#include "edit/patch.h"
 #include "edit/mask.h"
 #include "edit/render.h"
 #include "decoder/exif.h"
@@ -91,6 +92,24 @@ struct Document {
   void CacheFittedMask(const PreviewPlan& plan, std::uint64_t mask_id,
                        std::shared_ptr<const MaskBuffer> fitted);
 
+  /**
+   * Patches a model invented, in document coordinates.
+   *
+   * Beside the document for the same reason masks are: they are pixels, and the
+   * operation list has to stay small enough to be the project file.
+   */
+  std::uint64_t StorePatch(PatchBuffer buffer);
+  std::shared_ptr<const PatchBuffer> FindPatch(std::uint64_t patch_id) const;
+  void RestorePatch(std::uint64_t patch_id, PatchBuffer buffer);
+  std::vector<std::pair<std::uint64_t, std::shared_ptr<const PatchBuffer>>> AllPatches() const;
+
+  /// The same patch converted and resampled for a render, kept so a slider does
+  /// not redo it once a frame.
+  std::shared_ptr<const FittedPatch> CachedFittedPatch(const PreviewPlan& plan,
+                                                       std::uint64_t patch_id) const;
+  void CacheFittedPatch(const PreviewPlan& plan, std::uint64_t patch_id,
+                        std::shared_ptr<const FittedPatch> fitted);
+
  private:
   mutable std::mutex base_mutex_;
   PreviewPlan base_plan_;
@@ -101,6 +120,12 @@ struct Document {
   std::uint64_t next_mask_ = 1;
   PreviewPlan fitted_plan_;
   std::unordered_map<std::uint64_t, std::shared_ptr<const MaskBuffer>> fitted_;
+
+  mutable std::mutex patches_mutex_;
+  std::unordered_map<std::uint64_t, std::shared_ptr<const PatchBuffer>> patches_;
+  std::uint64_t next_patch_ = 1;
+  PreviewPlan fitted_patch_plan_;
+  std::unordered_map<std::uint64_t, std::shared_ptr<const FittedPatch>> fitted_patches_;
 };
 
 /**

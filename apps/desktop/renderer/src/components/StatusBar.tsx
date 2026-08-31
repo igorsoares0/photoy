@@ -6,6 +6,7 @@ const BUSY_LABEL: Record<string, string> = {
   rendering: 'renderizando',
   exporting: 'exportando',
   segmenting: 'selecionando',
+  filling: 'preenchendo',
 };
 
 function Badge({ children }: { children: React.ReactNode }): React.JSX.Element {

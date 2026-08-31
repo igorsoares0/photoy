@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -43,10 +44,26 @@ class Session {
    */
   std::vector<float> Run(const std::vector<float>& input);
 
+  /**
+   * Runs a model that takes several NCHW inputs, returning the first output
+   * whole.
+   *
+   * Inputs are matched to the model by name rather than by position: LaMa
+   * declares an image and a mask, and which order they come in is the model's
+   * business, not the caller's.
+   */
+  std::vector<float> RunNamed(const std::vector<std::string>& names,
+                              const std::vector<std::vector<float>>& inputs,
+                              const std::vector<std::array<std::int64_t, 4>>& shapes);
+
+  /// Input names the model declares, in its own order.
+  const std::vector<std::string>& input_names() const noexcept { return input_names_; }
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
   int input_side_ = 320;
+  std::vector<std::string> input_names_;
 };
 
 /**

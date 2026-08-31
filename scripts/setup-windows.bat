@@ -57,6 +57,12 @@ if not exist "%PHOTOY_ROOT%\.tooling\models\u2netp.onnx" (
     "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx"
   if errorlevel 1 exit /b 1
 )
+if not exist "%PHOTOY_ROOT%\.tooling\models\lama.onnx" (
+  echo Downloading LaMa inpainting model ^(92 MB, Apache-2.0^)...
+  curl -sL -o "%PHOTOY_ROOT%\.tooling\models\lama.onnx" ^
+    "https://huggingface.co/opencv/inpainting_lama/resolve/main/inpainting_lama_2025jan.onnx"
+)
+
 
 echo [photoy] 5/5 npm packages
 pushd "%PHOTOY_ROOT%"

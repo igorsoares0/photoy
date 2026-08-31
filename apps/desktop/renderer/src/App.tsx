@@ -3,6 +3,7 @@ import { useEditor } from './store/editor';
 import { AdjustmentsPanel } from './components/AdjustmentsPanel';
 import { Canvas } from './components/Canvas';
 import { CropOverlay } from './components/CropOverlay';
+import { BrushOverlay } from './components/BrushOverlay';
 import { MaskOverlay } from './components/MaskOverlay';
 import { EmptyState } from './components/EmptyState';
 import { ExportDialog } from './components/ExportDialog';
@@ -193,6 +194,7 @@ export function App(): React.JSX.Element {
           <Canvas />
           <CropOverlay container={stageRef} />
           <MaskOverlay container={stageRef} />
+          <BrushOverlay container={stageRef} />
           {document === null ? (
             <EmptyState dragging={dragging} />
           ) : (

@@ -226,7 +226,12 @@ export class EngineClient extends EventEmitter {
     this.#setState('failed');
   }
 
-  request(method: string, params?: unknown, coalesceKey?: string): Promise<EngineResponse> {
+  request(
+    method: string,
+    params?: unknown,
+    coalesceKey?: string,
+    body?: Buffer,
+  ): Promise<EngineResponse> {
     const child = this.#child;
     if (child === null) {
       return Promise.reject(new EngineCallError('engine_unavailable', 'The engine is not running'));
@@ -237,10 +242,14 @@ export class EngineClient extends EventEmitter {
       JSON.stringify({ type: 'request', id, method, params, coalesceKey }),
       'utf8',
     );
-    const frame = Buffer.alloc(4 + header.length + 4);
+    // Bytes that have no business in JSON - a painted mask - ride the payload,
+    // the same way pixels do on the way back.
+    const payload = body ?? Buffer.alloc(0);
+    const frame = Buffer.alloc(4 + header.length + 4 + payload.length);
     frame.writeUInt32LE(header.length, 0);
     header.copy(frame, 4);
-    frame.writeUInt32LE(0, 4 + header.length);
+    frame.writeUInt32LE(payload.length, 4 + header.length);
+    payload.copy(frame, 4 + header.length + 4);
 
     return new Promise<EngineResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -257,8 +266,9 @@ export class EngineClient extends EventEmitter {
     method: string,
     params?: unknown,
     coalesceKey?: string,
+    body?: Buffer,
   ): Promise<{ result: T; payload: Buffer }> {
-    const { header, payload } = await this.request(method, params, coalesceKey);
+    const { header, payload } = await this.request(method, params, coalesceKey, body);
     if (header.ok !== true) {
       const error = header.error ?? { code: 'internal_error', message: 'Unknown engine error' };
       throw new EngineCallError(error.code, error.message, error.detail);

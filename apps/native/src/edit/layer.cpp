@@ -35,9 +35,17 @@ const char* LayerKindName(LayerKind kind) noexcept {
   switch (kind) {
     case LayerKind::kBackground: return "background";
     case LayerKind::kMatte: return "matte";
+    case LayerKind::kPatch: return "patch";
     case LayerKind::kAdjustment: break;
   }
   return "adjustment";
+}
+
+LayerKind LayerKindFromName(const std::string& name) noexcept {
+  if (name == "matte") return LayerKind::kMatte;
+  if (name == "patch") return LayerKind::kPatch;
+  if (name == "background") return LayerKind::kBackground;
+  return LayerKind::kAdjustment;
 }
 
 const char* FillKindName(FillKind kind) noexcept {
@@ -79,13 +87,21 @@ float Blend(BlendMode mode, float under, float over) noexcept {
   return over;
 }
 
-CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster)
+CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster,
+                             const FittedPatch* patch)
     : kind_(layer.kind),
       fill_(layer.fill),
       adjustments_(layer.adjustments),
       mask_(layer.mask, width, height, raster),
       blend_(layer.blend),
-      opacity_(std::clamp(layer.opacity, 0.0f, 1.0f)) {
+      opacity_(std::clamp(layer.opacity, 0.0f, 1.0f)),
+      patch_(patch) {
+  if (kind_ == LayerKind::kPatch) {
+    // A patch without its pixels - stale, or not yet generated - draws nothing
+    // rather than drawing a hole.
+    transparent_ = opacity_ <= 0.0f || patch_ == nullptr || patch_->empty();
+    return;
+  }
   if (kind_ == LayerKind::kMatte) {
     // A matte with nothing to mask covers the whole frame, which leaves it
     // exactly as it found it.
@@ -115,6 +131,25 @@ CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const Ma
 
 void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept {
   if (transparent_) return;
+
+  if (kind_ == LayerKind::kPatch) {
+    const int px = x - patch_->x;
+    const int py = y - patch_->y;
+    if (px < 0 || py < 0 || px >= patch_->pixels.width() || py >= patch_->pixels.height()) return;
+
+    // The mask says how much of what the model invented to use, so the marked
+    // area can be trimmed afterwards without the model running again.
+    const float coverage = opacity_ * mask_.At(x, y);
+    if (coverage <= 0.0f) return;
+
+    constexpr float kFromSample = 1.0f / 65535.0f;
+    const std::uint16_t* pixel =
+        patch_->pixels.Row(py) + static_cast<std::size_t>(px) * kChannels;
+    r += (pixel[0] * kFromSample - r) * coverage;
+    g += (pixel[1] * kFromSample - g) * coverage;
+    b += (pixel[2] * kFromSample - b) * coverage;
+    return;
+  }
 
   if (kind_ == LayerKind::kMatte) {
     // The mask marks what stays. Everything else is what the fill replaces.

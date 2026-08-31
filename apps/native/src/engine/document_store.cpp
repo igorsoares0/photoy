@@ -71,6 +71,51 @@ void Document::CacheFittedMask(const PreviewPlan& plan, std::uint64_t mask_id,
   fitted_[mask_id] = std::move(fitted);
 }
 
+std::uint64_t Document::StorePatch(PatchBuffer buffer) {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  const std::uint64_t patch_id = next_patch_++;
+  patches_[patch_id] = std::make_shared<const PatchBuffer>(std::move(buffer));
+  fitted_patches_.clear();
+  return patch_id;
+}
+
+void Document::RestorePatch(std::uint64_t patch_id, PatchBuffer buffer) {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  patches_[patch_id] = std::make_shared<const PatchBuffer>(std::move(buffer));
+  next_patch_ = std::max(next_patch_, patch_id + 1);
+  fitted_patches_.clear();
+}
+
+std::shared_ptr<const PatchBuffer> Document::FindPatch(std::uint64_t patch_id) const {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  const auto found = patches_.find(patch_id);
+  return found == patches_.end() ? nullptr : found->second;
+}
+
+std::vector<std::pair<std::uint64_t, std::shared_ptr<const PatchBuffer>>> Document::AllPatches()
+    const {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  return {patches_.begin(), patches_.end()};
+}
+
+std::shared_ptr<const FittedPatch> Document::CachedFittedPatch(const PreviewPlan& plan,
+                                                               std::uint64_t patch_id) const {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  if (!plan.Matches(fitted_patch_plan_)) return nullptr;
+  const auto found = fitted_patches_.find(patch_id);
+  return found == fitted_patches_.end() ? nullptr : found->second;
+}
+
+void Document::CacheFittedPatch(const PreviewPlan& plan, std::uint64_t patch_id,
+                                std::shared_ptr<const FittedPatch> fitted) {
+  const std::lock_guard<std::mutex> lock(patches_mutex_);
+  if (!plan.Matches(fitted_patch_plan_)) {
+    fitted_patches_.clear();
+    fitted_patch_plan_ = plan;
+  }
+  fitted_patches_[patch_id] = std::move(fitted);
+}
+
 std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {
   if (!paths::Exists(utf8_path)) {
     throw EngineException(error_code::kFileNotFound, "File not found", utf8_path);

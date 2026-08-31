@@ -32,7 +32,10 @@ class Engine {
 
   /// Handles one request. Responses are written by whichever thread finishes
   /// the work, so this may return before the caller has been answered.
-  void Dispatch(const nlohmann::json& header);
+  /// `payload` carries raw bytes that never belong in JSON - today, a painted
+  /// mask on its way in. Empty for every other request.
+  void Dispatch(const nlohmann::json& header,
+                const std::vector<std::uint8_t>& payload = {});
 
   /// Cancels outstanding work and waits for it to report back.
   void Shutdown();
@@ -48,6 +51,13 @@ class Engine {
   nlohmann::json ResetEdits(const nlohmann::json& params);
   nlohmann::json EditHistory(const nlohmann::json& params);
   nlohmann::json CancelJob(const nlohmann::json& params);
+  /// Takes a painted mask off the wire and keeps it under a fresh identifier.
+  nlohmann::json StoreMask(const nlohmann::json& params,
+                           const std::vector<std::uint8_t>& payload);
+  /// Hands a stored mask back, so a brush can carry on from what is there.
+  protocol::Frame FetchMask(std::int64_t id, const nlohmann::json& params);
+  protocol::Frame InpaintJob(std::int64_t id, const nlohmann::json& params,
+                             const CancellationTokenPtr& token);
 
   // Worker-thread handlers.
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);
@@ -59,6 +69,8 @@ class Engine {
   /// Raster masks the layers refer to, resampled to the render and cached.
   FittedMasks FitMasks(Document& document, const PreviewPlan& plan,
                        const std::vector<Layer>& layers) const;
+  FittedPatches FitPatches(Document& document, const PreviewPlan& plan,
+                           const std::vector<Layer>& layers) const;
   protocol::Frame RenderPreviewJob(std::int64_t id, const nlohmann::json& params,
                                    const CancellationTokenPtr& token);
   protocol::Frame ExportImage(std::int64_t id, const nlohmann::json& params,

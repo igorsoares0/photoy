@@ -23,6 +23,9 @@ export const Channels = {
   recoveryTake: 'photoy:recovery.take',
   recoveryDiscard: 'photoy:recovery.discard',
   aiSegment: 'photoy:ai.segment',
+  maskStore: 'photoy:mask.store',
+  maskFetch: 'photoy:mask.fetch',
+  aiInpaint: 'photoy:ai.inpaint',
   recentList: 'photoy:recent.list',
   sessionBootstrap: 'photoy:session.bootstrap',
 } as const;

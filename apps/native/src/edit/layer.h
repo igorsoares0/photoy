@@ -7,6 +7,7 @@
 #include "edit/adjustments.h"
 #include "edit/decontaminate.h"
 #include "edit/mask.h"
+#include "edit/patch.h"
 
 namespace photoy {
 
@@ -17,7 +18,7 @@ namespace photoy {
  * cannot be removed, reordered or adjusted. It is the visual proof of the
  * non-destructive model - whatever is done above it, it is still there.
  */
-enum class LayerKind { kBackground, kAdjustment, kMatte };
+enum class LayerKind { kBackground, kAdjustment, kMatte, kPatch };
 
 /// What takes the place of what a matte layer removes.
 enum class FillKind { kTransparent, kColor };
@@ -36,6 +37,7 @@ struct FillColor {
 enum class BlendMode { kNormal, kMultiply, kScreen, kOverlay, kSoftLight };
 
 const char* LayerKindName(LayerKind kind) noexcept;
+LayerKind LayerKindFromName(const std::string& name) noexcept;
 const char* BlendModeName(BlendMode mode) noexcept;
 BlendMode BlendModeFromName(const std::string& name) noexcept;
 
@@ -72,6 +74,17 @@ struct Layer {
    * honest remedy.
    */
   float decontaminate = 1.0f;
+
+  /**
+   * kPatch: which stored patch this layer draws, and what it was made against.
+   *
+   * The patch is what the model invented; the mask above decides how much of it
+   * is used. Keeping them apart is what lets the marked area be adjusted after
+   * the fact without running the model again.
+   */
+  std::uint64_t patch = 0;
+  int patch_width = 0;
+  int patch_height = 0;
   /// Shown in the layers panel. Empty means the UI names it by kind.
   std::string name;
 };
@@ -89,7 +102,8 @@ class CompiledLayer {
  public:
   /// The frame size is needed to compile the mask, which is described in
   /// fractions of the document rather than in pixels.
-  CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster = nullptr);
+  CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster = nullptr,
+                const FittedPatch* patch = nullptr);
 
   /// True when the layer would leave every pixel exactly as it found it.
   bool transparent() const noexcept { return transparent_; }
@@ -119,6 +133,7 @@ class CompiledLayer {
   float opacity_ = 1.0f;
   float decontaminate_ = 0.0f;
   BackgroundEstimatePtr background_;
+  const FittedPatch* patch_ = nullptr;
   bool transparent_ = false;
   /// True when the mix is a plain replacement, which skips the blend entirely.
   bool passthrough_ = true;

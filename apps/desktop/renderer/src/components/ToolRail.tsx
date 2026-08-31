@@ -14,6 +14,11 @@ export function ToolRail(): React.JSX.Element {
   const beginCrop = useEditor((state) => state.beginCrop);
   const cancelCrop = useEditor((state) => state.cancelCrop);
   const removeBackground = useEditor((state) => state.removeBackground);
+  const painting = useEditor((state) => state.brush !== null);
+  const beginObjectRemoval = useEditor((state) => state.beginObjectRemoval);
+  const filling = useEditor((state) => state.busy === 'filling');
+  const beginBrush = useEditor((state) => state.beginBrush);
+  const endBrush = useEditor((state) => state.endBrush);
   const segmenting = useEditor((state) => state.busy === 'segmenting');
   const removed = useEditor((state) =>
     (state.history?.layers ?? NO_LAYERS).some((layer) => layer.kind === 'matte'),
@@ -36,6 +41,14 @@ export function ToolRail(): React.JSX.Element {
         selected={cropping}
         disabled={disabled}
         onClick={() => (cropping ? cancelCrop() : beginCrop())}
+      />
+      <IconButton
+        icon="brush"
+        title="Pincel de máscara"
+        size={36}
+        selected={painting}
+        disabled={disabled}
+        onClick={() => (painting ? endBrush() : beginBrush())}
       />
       <span style={{ width: 22, height: 1, background: 'var(--border-hairline)', margin: '5px 0' }} />
       <IconButton
@@ -69,6 +82,14 @@ export function ToolRail(): React.JSX.Element {
       <span style={{ width: 22, height: 1, background: 'var(--border-hairline)', margin: '5px 0' }} />
       {/* Violet, and the only coloured thing on the rail: a model does this
           one, and the style guide reserves the colour for exactly that. */}
+      <IconButton
+        icon="eraser"
+        title={filling ? 'Preenchendo…' : 'Remover objeto'}
+        size={36}
+        accent
+        disabled={disabled || filling}
+        onClick={() => void beginObjectRemoval()}
+      />
       <IconButton
         icon="subject"
         title={segmenting ? 'Removendo fundo…' : 'Remover fundo'}

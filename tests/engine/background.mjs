@@ -64,7 +64,7 @@ export async function run() {
 
   await suite.check('describe reports the layer and fill kinds', async () => {
     const { result } = await engine.call('engine.describe');
-    assert.deepEqual(result.layerKinds, ['background', 'adjustment', 'matte']);
+    assert.deepEqual(result.layerKinds, ['background', 'adjustment', 'matte', 'patch']);
     assert.deepEqual(result.fillKinds, ['transparent', 'color']);
     assert.ok(result.operations.includes('setLayerFill'));
   });

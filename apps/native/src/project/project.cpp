@@ -34,6 +34,7 @@ constexpr const char* kFormatTag = "photoy-project";
 std::string EntryFor(const std::string& file_name) { return "original/" + file_name; }
 
 std::string MaskEntryFor(std::uint64_t id) { return "masks/" + std::to_string(id) + ".png"; }
+std::string PatchEntryFor(std::uint64_t id) { return "patches/" + std::to_string(id) + ".png"; }
 
 }  // namespace
 
@@ -60,6 +61,22 @@ void SaveProject(const Project& project, const std::string& utf8_path) {
                          {"height", buffer.height}});
   }
   manifest["masks"] = std::move(masks);
+
+  json patches = json::array();
+  std::vector<std::vector<std::uint8_t>> patch_bytes;
+  patch_bytes.reserve(project.patches.size());
+  for (const auto& [id, buffer] : project.patches) {
+    patch_bytes.push_back(EncodePatchPng(buffer.pixels));
+    patches.push_back(json{{"id", id},
+                           {"entry", PatchEntryFor(id)},
+                           {"x", buffer.region.x},
+                           {"y", buffer.region.y},
+                           {"width", buffer.region.width},
+                           {"height", buffer.region.height},
+                           {"documentWidth", buffer.document_width},
+                           {"documentHeight", buffer.document_height}});
+  }
+  manifest["patches"] = std::move(patches);
   const std::string manifest_text = manifest.dump(2);
 
   zip_error_t error;
@@ -99,6 +116,10 @@ void SaveProject(const Project& project, const std::string& utf8_path) {
       project.source.bytes.size(), false);
   for (std::size_t i = 0; i < mask_bytes.size(); ++i) {
     add(MaskEntryFor(project.masks[i].first), mask_bytes[i].data(), mask_bytes[i].size(), false);
+  }
+  for (std::size_t i = 0; i < patch_bytes.size(); ++i) {
+    add(PatchEntryFor(project.patches[i].first), patch_bytes[i].data(), patch_bytes[i].size(),
+        false);
   }
 
   if (zip_close(archive) < 0) {
@@ -219,6 +240,21 @@ Project LoadProject(const std::string& utf8_path) {
           id, DecodeMaskPng(read_entry(entry.value("entry", MaskEntryFor(id)))));
     }
   }
+
+  if (manifest.contains("patches") && manifest.at("patches").is_array()) {
+    for (const json& entry : manifest.at("patches")) {
+      const auto id = entry.value("id", static_cast<std::uint64_t>(0));
+      if (id == 0) continue;
+      PatchBuffer buffer;
+      buffer.region = Rect{entry.value("x", 0), entry.value("y", 0), entry.value("width", 0),
+                           entry.value("height", 0)};
+      buffer.document_width = entry.value("documentWidth", 0);
+      buffer.document_height = entry.value("documentHeight", 0);
+      buffer.pixels = DecodePatchPng(read_entry(entry.value("entry", PatchEntryFor(id))));
+      project.patches.emplace_back(id, std::move(buffer));
+    }
+  }
+
 
   zip_discard(archive);
 

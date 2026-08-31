@@ -264,6 +264,93 @@ em tons de cinza por máscara — em tons de cinza porque é o que uma máscara 
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
 
+### O pincel de máscara
+
+Máscaras eram descritas (linear, radial) ou geradas (segmentação). Faltava a
+terceira: **desenhada**. Ela é o dispositivo de entrada da remoção de objeto — não
+há como marcar um objeto arbitrário com um gradiente — e é o remendo que faltava
+para corrigir um erro de segmentação sem refazer nada.
+
+O pincel é **duro, e isso é escolha**. A tela em que ele pinta *é* a máscara:
+violeta em alfa cheio onde o pincel passou, nada onde não passou, de modo que o
+mesmo buffer é o que aparece na tela e, lido pelo canal alfa, o que vai para o
+engine. Traços opacos sobrepostos são idempotentes; um pincel macio acumularia
+uma costura mais escura em todo lugar onde o traço cruza a si mesmo. E máscara
+dura é o que o inpainting quer. Se um dia fizer falta suavidade, o ponto preto e
+o ponto branco da máscara já estão lá.
+
+O tamanho é **porcentagem do lado mais curto**, não pixels — a unidade que todas
+as outras máscaras daqui usam. Significa a mesma coisa numa foto de celular e num
+escaneamento, e sobrevive a um resize.
+
+A máscara é pintada e guardada com no máximo 2048 px de lado. Ela viaja inteira
+para o engine a cada traço, então pintar no tamanho de uma foto de 24 MP mandaria
+24 MB por traço para descrever uma borda que o engine vai reamostrar de qualquer
+jeito. **Um traço é um passo do histórico**: o engine só fica sabendo quando a mão
+sai.
+
+Isso exigiu duas coisas novas no protocolo. `mask.store` leva bytes no *payload*
+do pedido — até então só as respostas carregavam payload — e `mask.fetch` devolve
+uma máscara guardada, que é o que permite o pincel continuar de onde a
+segmentação parou em vez de começar do zero. O tamanho declarado no cabeçalho é
+conferido contra o payload: confiar nele leria as linhas nos deslocamentos
+errados e cisalharia a máscara, que é o tipo de falha que ninguém atribuiria ao
+pincel.
+
+### Remover objeto
+
+O modelo é o **LaMa**, e a licença foi verificada antes de qualquer código: li o
+LICENSE de `advimman/lama` (Apache-2.0, sem cláusula separada para os pesos) e o
+do repositório da OpenCV que redistribui o export ONNX, não um resumo de nenhum
+dos dois. O arquivo é o da OpenCV — 92 MB contra 208 MB do export original,
+entradas nomeadas `image` e `mask`, e o `lama.py` deles serve de especificação
+executável do pré-processamento.
+
+A entrada é **fixa em 512 × 512**, o que decide o desenho: o inpainting roda numa
+**janela em torno da marcação**, não na foto inteira. O custo passa a ser função do
+tamanho do que se está apagando e não dos megapixels — a mesma lição que a
+segmentação já tinha ensinado — e cada pixel fora da janela fica exatamente como
+estava, em vez de sobreviver a uma ida e volta por um reamostrador. A janela tem
+o dobro do lado da marcação, porque inpainting é extrapolação a partir do
+entorno: uma janela cortada rente à marca não deixaria de onde extrapolar.
+
+#### O patch é uma camada, e guarda só o que o modelo sabe
+
+O resultado vira uma **camada de tipo patch**, pelo mesmo motivo que a remoção de
+fundo virou camada: dá para desfazer, esconder, reduzir a intensidade e refazer.
+A camada guarda duas coisas separadas — os pixels que o modelo inventou e a
+máscara que marcou o objeto — e **a mistura acontece na composição**. Isso é o que
+permite corrigir a marca com o pincel depois, sem rodar o modelo de novo.
+
+Um patch é guardado **como o modelo o produziu**: sRGB de 8 bits, na resolução do
+modelo. Converter e ampliar para o tamanho do documento antes de guardar seria
+guardar interpolação e chamar de detalhe. A conversão e a reamostragem acontecem
+por render, em cache ao lado do documento, exatamente como uma máscara ajustada.
+No `.myphoto` ele vai para `patches/` como PNG comum, que é o que deixa abrir
+`patches/1.png` em qualquer visualizador e ver o que foi pintado na fotografia.
+
+Isso expôs um erro que já existia: **a exportação entregava as máscaras sem
+reamostrar**. `CompiledMask` procura por índice de pixel, então uma máscara
+guardada num tamanho diferente do render seria lida nos deslocamentos errados —
+invisível enquanto todas as máscaras vinham da segmentação, que as produz no
+tamanho natural, e quebrado assim que o pincel passou a guardá-las em até 2048.
+Agora a exportação reamostra máscara e patch para o tamanho de saída.
+
+#### O que custa, e o que não está verificado
+
+Carregar o modelo leva ~7 s, uma vez. Cada inferência leva **3,6 a 4,5 s**, e é
+constante, porque a janela sempre vira 512. Isso é lento para um editor: a
+segmentação leva 0,7 s. Ainda não investiguei se o gargalo é o LaMa ser pesado ou
+a configuração do runtime — e depois de ter otimizado a peça errada uma vez neste
+projeto, não vou chutar.
+
+**A ordem dos canais não está verificada.** A implementação de referência da
+OpenCV alimenta o modelo com uma imagem de `cv.imread`, que é BGR, e não troca —
+então seguimos a referência (`kModelWantsBgr`). Mas a troca é simétrica na
+entrada e na saída, o que a torna **invisível em fidelidade de cor**: o que ela
+afeta é a qualidade do preenchimento, e julgar isso pede uma fotografia de
+verdade. Nos fixtures sintéticos não dá para distinguir.
+
 ### Remover fundo
 
 Remover o fundo **é uma camada**, não uma alteração da fotografia. A camada de

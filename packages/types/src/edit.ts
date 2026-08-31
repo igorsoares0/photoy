@@ -21,7 +21,8 @@ export type OperationKind =
   | 'setLayerBlend'
   | 'setLayerMask'
   | 'setLayerFill'
-  | 'setLayerDecontaminate';
+  | 'setLayerDecontaminate'
+  | 'setLayerPatch';
 
 export type MaskKind = 'none' | 'linear' | 'radial' | 'raster';
 
@@ -101,7 +102,7 @@ export function isMaskStale(mask: Mask, width: number, height: number): boolean 
   return mask.kind === 'raster' && (mask.rasterWidth !== width || mask.rasterHeight !== height);
 }
 
-export type LayerKind = 'background' | 'adjustment' | 'matte';
+export type LayerKind = 'background' | 'adjustment' | 'matte' | 'patch';
 
 /** What takes the place of what a matte layer removes. */
 export type FillKind = 'transparent' | 'color';
@@ -135,6 +136,17 @@ export interface Layer {
   color: FillColor;
   /** kind 'matte': how much of the old background's colour to unmix, 0 to 1. */
   decontaminate: number;
+  /**
+   * kind 'patch': the stored pixels this layer draws, and what they were made
+   * against.
+   *
+   * The patch is what the model invented; the layer's mask decides how much of
+   * it is used, which is what lets the marked area be trimmed afterwards
+   * without the model running again.
+   */
+  patch: number;
+  patchWidth: number;
+  patchHeight: number;
   adjustments: Adjustments;
   /** Where the layer applies. `kind: 'none'` means everywhere. */
   mask: Mask;
@@ -220,6 +232,14 @@ export interface ResizeOperation {
   height: number;
 }
 
+export interface SetLayerPatchOperation {
+  kind: 'setLayerPatch';
+  layerId: number;
+  patch: number;
+  patchWidth: number;
+  patchHeight: number;
+}
+
 export interface SetLayerDecontaminateOperation {
   kind: 'setLayerDecontaminate';
   layerId: number;
@@ -259,6 +279,7 @@ export type Operation =
   | SetLayerFillOperation
   | SetLayerDecontaminateOperation
   | ResizeOperation
+  | SetLayerPatchOperation
   | LayerOperation;
 
 /** An operation as it comes back from the engine, with its assigned id. */

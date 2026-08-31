@@ -39,7 +39,7 @@ int main() {
       continue;
     }
 
-    engine.Dispatch(request.header);
+    engine.Dispatch(request.header, request.payload);
   }
 
   // Draining the queue before returning lets every outstanding job report back,

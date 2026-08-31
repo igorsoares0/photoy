@@ -113,6 +113,8 @@ export function describeHistory(entries: HistoryEntry[]): HistoryRow[] {
           label: 'Tamanho',
           detail: formatDimensions(entry.width ?? 0, entry.height ?? 0),
         };
+      case 'setLayerPatch':
+        return { id, label: 'Preencher', detail: null };
       case 'setLayerFill':
         return {
           id,
