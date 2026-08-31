@@ -235,3 +235,7 @@ button {
 .photoy-select option {
   background: var(--surface-raised);
 }
+
+.photoy-tab:hover {
+  color: var(--fg-primary);
+}

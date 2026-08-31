@@ -13,6 +13,7 @@ export const Channels = {
   editApply: 'photoy:edit.apply',
   editUndo: 'photoy:edit.undo',
   editRedo: 'photoy:edit.redo',
+  editSeek: 'photoy:edit.seek',
   editReset: 'photoy:edit.reset',
   editHistory: 'photoy:edit.history',
   projectOpen: 'photoy:project.open',

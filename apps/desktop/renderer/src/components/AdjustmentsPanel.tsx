@@ -1,8 +1,11 @@
 import type { AdjustmentKey, BlendMode } from '@photoy/types';
 import { NO_LAYERS, currentAdjustments, selectedLayer, useEditor } from '../store/editor';
 import { formatSigned } from '../lib/format';
+import { useState } from 'react';
 import { CropPanel } from './CropPanel';
+import { HistoryPanel } from './HistoryPanel';
 import { LayersPanel } from './LayersPanel';
+import { TabBar } from './TabBar';
 import { MaskPanel } from './MaskPanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
@@ -40,6 +43,13 @@ const BLEND_MODES: Array<{ value: BlendMode; label: string }> = [
   { value: 'screen', label: 'screen' },
   { value: 'overlay', label: 'overlay' },
   { value: 'soft-light', label: 'soft light' },
+];
+
+type Tab = 'edit' | 'history';
+
+const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
+  { value: 'edit', label: 'Ajustes' },
+  { value: 'history', label: 'Histórico' },
 ];
 
 const COLOUR: Control[] = [
@@ -89,6 +99,7 @@ function Group({ label, controls }: { label: string; controls: Control[] }): Rea
  * invite changes that the pending crop is not yet committed to.
  */
 export function AdjustmentsPanel(): React.JSX.Element {
+  const [tab, setTab] = useState<Tab>('edit');
   const document = useEditor((state) => state.document);
   const cropping = useEditor((state) => state.cropRect !== null);
   const layer = useEditor(selectedLayer);
@@ -126,7 +137,11 @@ export function AdjustmentsPanel(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Only the panel body scrolls; the chrome around it stays put. */}
+          <TabBar<Tab> tabs={TABS} value={tab} onChange={setTab} />
+          {tab === 'history' ? (
+            <HistoryPanel />
+          ) : (
+            /* Only the panel body scrolls; the chrome around it stays put. */
           <div
             className="flex flex-1 flex-col overflow-y-auto"
             style={{ padding: 'var(--pad-panel)', gap: 'var(--gap-group)' }}
@@ -179,6 +194,7 @@ export function AdjustmentsPanel(): React.JSX.Element {
               </span>
             )}
           </div>
+          )}
           <button
             type="button"
             onClick={() => void resetAdjustments()}

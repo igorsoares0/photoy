@@ -189,6 +189,11 @@ export function registerIpcHandlers(
   });
   handle(Channels.editUndo, editCall('edit.undo', true));
   handle(Channels.editRedo, editCall('edit.redo', true));
+  handle(Channels.editSeek, async (documentId: string, cursor: number) => {
+    const { result } = await engine.call<EditHistory>('edit.seek', { documentId, cursor });
+    markDirty();
+    return result;
+  });
   handle(Channels.editReset, editCall('edit.reset', true));
   // Reading the stack changes nothing, so it must not mark the session dirty.
   handle(Channels.editHistory, editCall('edit.history', false));

@@ -54,6 +54,9 @@ const api: PhotoyApi = {
   redoEdit: (documentId: string) =>
     ipcRenderer.invoke(Channels.editRedo, documentId) as Promise<ApiResult<EditHistory>>,
 
+  seekEdit: (documentId: string, cursor: number) =>
+    ipcRenderer.invoke(Channels.editSeek, documentId, cursor) as Promise<ApiResult<EditHistory>>,
+
   resetEdits: (documentId: string) =>
     ipcRenderer.invoke(Channels.editReset, documentId) as Promise<ApiResult<EditHistory>>,
 

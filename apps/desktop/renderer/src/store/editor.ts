@@ -132,6 +132,7 @@ interface EditorState {
   undo(): Promise<void>;
   redo(): Promise<void>;
   resetEdits(): Promise<void>;
+  seekEdit(cursor: number): Promise<void>;
   exportImage(options: ExportOptions): Promise<void>;
 
   setViewport(next: Partial<Viewport>): void;
@@ -595,6 +596,12 @@ export const useEditor = create<EditorState>((set, get) => ({
         continuing,
       ),
     );
+  },
+
+  seekEdit: async (cursor) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(set, get, await window.photoy.seekEdit(document.id, cursor));
   },
 
   resetAdjustments: async () => {

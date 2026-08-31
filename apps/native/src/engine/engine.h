@@ -43,6 +43,7 @@ class Engine {
   nlohmann::json ApplyEdit(const nlohmann::json& params);
   nlohmann::json UndoEdit(const nlohmann::json& params);
   nlohmann::json RedoEdit(const nlohmann::json& params);
+  nlohmann::json SeekEdit(const nlohmann::json& params);
   nlohmann::json ResetEdits(const nlohmann::json& params);
   nlohmann::json EditHistory(const nlohmann::json& params);
   nlohmann::json CancelJob(const nlohmann::json& params);

@@ -4,11 +4,11 @@ Editor de fotos desktop local-first. Especificação completa em
 [`docs/photo-editor-spec-driven-development.md`](docs/photo-editor-spec-driven-development.md);
 o sistema visual em [`docs/style-guide.html`](docs/style-guide.html).
 
-**Estado: Milestone 1 completo, Milestone 2 em 10 de 11, Milestone 3 com camadas,
-máscaras paramétricas, projeto e autosave.** Abrir, decodificar, gerenciar cor, canvas, zoom, pan, girar,
+**Estado: Milestone 1 completo, Milestone 2 em 10 de 11, Milestone 3 completo
+exceto máscaras pintadas.** Abrir, decodificar, gerenciar cor, canvas, zoom, pan, girar,
 espelhar, recortar com alças e proporções, empilhar camadas de ajuste com
-opacidade, modo de mistura e **máscara**, desfazer/refazer, salvar e reabrir
-projetos,
+opacidade, modo de mistura e máscara, desfazer/refazer, **navegar pelo
+histórico**, salvar e reabrir projetos,
 recuperar uma sessão interrompida, e exportar.
 
 ## Convenções
@@ -192,6 +192,18 @@ Milestone 2 em diante. Consequências visíveis hoje:
   depois de ler o cabeçalho. Erra para cima de propósito: um job que superestima espera um
   pouco mais pela vez dele, um que subestima é admitido junto de outro e falta memória.
 
+### O histórico
+
+Desfazer e refazer movem o cursor um passo; o painel salta para qualquer ponto.
+Nada é descartado ao voltar, então ir e vir é de graça — a cauda só some quando
+se edita a partir de um ponto anterior, que é onde o ramo abandonado deixa de
+existir.
+
+**Cada linha que tem um número mostra o número.** Uma operação de ajuste carrega
+o estado inteiro dos controles, e não um delta — é isso que a torna replayável —
+então o painel recupera o que mudou comparando com o estado anterior *da mesma
+camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
+
 ### Máscaras
 
 As máscaras de hoje são **descritas, não pintadas**: um gradiente linear ou
@@ -261,8 +273,8 @@ apps/native/src/
   core/       erros, log, IO de arquivo com caminho UTF-8
   protocol/   framing e transporte stdio
   jobs/       fila de trabalho, supressão e cancelamento
-  edit/       operações, ajustes, camadas, máscaras, pilha com undo/redo, avaliação em
-              qualquer resolução
+  edit/       operações, ajustes, camadas, máscaras, pilha com undo/redo/seek,
+              avaliação em qualquer resolução
   project/    leitura e escrita do .myphoto
   color/      definição dos espaços, perfis ICC, matriz derivada e conversão rápida
   image/      buffer RGBA8/RGBA16, resample, orientação

@@ -34,6 +34,10 @@ bool EditStack::Redo() noexcept {
   return true;
 }
 
+void EditStack::Seek(std::size_t cursor) noexcept {
+  cursor_ = std::min(cursor, operations_.size());
+}
+
 void EditStack::Clear() noexcept {
   operations_.clear();
   cursor_ = 0;

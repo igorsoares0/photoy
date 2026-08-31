@@ -205,6 +205,53 @@ export async function run() {
     await engine.call('image.close', { documentId });
   });
 
+  await suite.check('seeking jumps to any point without discarding anything', async () => {
+    // Undo and redo are this with a step of one; a history panel needs to land
+    // anywhere, and coming back has to be free.
+    const documentId = await openGradient();
+    await apply(documentId, { kind: 'rotate', quarters: 1 });
+    await apply(documentId, { kind: 'flipHorizontal' });
+    await apply(documentId, { kind: 'crop', rect: { x: 0, y: 0, width: 60, height: 90 } });
+    const full = await render(documentId);
+
+    const back = await engine.call('edit.seek', { documentId, cursor: 1 });
+    assert.equal(back.result.cursor, 1);
+    assert.equal(back.result.entries.length, 3, 'seeking must not discard the tail');
+    assert.equal(back.result.canRedo, true);
+    assert.equal(back.result.width, 120, 'only the rotation should be in effect');
+
+    const origin = await engine.call('edit.seek', { documentId, cursor: 0 });
+    assert.equal(origin.result.width, 200);
+    assert.equal(origin.result.canUndo, false);
+
+    const forward = await engine.call('edit.seek', { documentId, cursor: 3 });
+    assert.equal(forward.result.width, 60);
+    assert.deepEqual((await render(documentId)).payload, full.payload, 'the pixels differ');
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('seeking past the end lands on the end', async () => {
+    const documentId = await openGradient();
+    await apply(documentId, { kind: 'rotate', quarters: 1 });
+    const { result } = await engine.call('edit.seek', { documentId, cursor: 99 });
+    assert.equal(result.cursor, 1);
+    assert.equal(result.canRedo, false);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('editing after a seek drops what was past it', async () => {
+    const documentId = await openGradient();
+    await apply(documentId, { kind: 'rotate', quarters: 1 });
+    await apply(documentId, { kind: 'flipHorizontal' });
+    await engine.call('edit.seek', { documentId, cursor: 1 });
+
+    const { result } = await apply(documentId, { kind: 'flipVertical' });
+    assert.equal(result.entries.length, 2);
+    assert.equal(result.entries[1].kind, 'flipVertical');
+    assert.equal(result.canRedo, false);
+    await engine.call('image.close', { documentId });
+  });
+
   await suite.check('reset returns the document to the original', async () => {
     const documentId = await openGradient();
     await apply(documentId, { kind: 'rotate', quarters: 1 });

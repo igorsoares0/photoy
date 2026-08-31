@@ -34,6 +34,14 @@ class EditStack {
   bool Undo() noexcept;
   bool Redo() noexcept;
 
+  /**
+   * Moves the cursor to an arbitrary point in the history.
+   *
+   * Undo and redo are this with a step of one; a history panel needs to jump.
+   * Nothing is discarded, so moving back and then forward again is free.
+   */
+  void Seek(std::size_t cursor) noexcept;
+
   /// Drops every operation, returning the document to the original.
   void Clear() noexcept;
 

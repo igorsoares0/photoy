@@ -192,6 +192,7 @@ void Engine::Dispatch(const nlohmann::json& header) {
     if (method == "edit.apply") return transport_.Write(MakeSuccess(id, ApplyEdit(params)));
     if (method == "edit.undo") return transport_.Write(MakeSuccess(id, UndoEdit(params)));
     if (method == "edit.redo") return transport_.Write(MakeSuccess(id, RedoEdit(params)));
+    if (method == "edit.seek") return transport_.Write(MakeSuccess(id, SeekEdit(params)));
     if (method == "edit.reset") return transport_.Write(MakeSuccess(id, ResetEdits(params)));
     if (method == "edit.history") return transport_.Write(MakeSuccess(id, EditHistory(params)));
     if (method == "job.cancel") return transport_.Write(MakeSuccess(id, CancelJob(params)));
@@ -353,6 +354,15 @@ nlohmann::json Engine::RedoEdit(const json& params) {
   {
     const std::lock_guard<std::mutex> lock(document->stack_mutex);
     document->stack.Redo();
+  }
+  return DescribeHistory(*document);
+}
+
+nlohmann::json Engine::SeekEdit(const json& params) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  {
+    const std::lock_guard<std::mutex> lock(document->stack_mutex);
+    document->stack.Seek(static_cast<std::size_t>(std::max(0, RequireInt(params, "cursor"))));
   }
   return DescribeHistory(*document);
 }

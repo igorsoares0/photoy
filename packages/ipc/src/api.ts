@@ -83,6 +83,8 @@ export interface PhotoyApi {
   ): Promise<ApiResult<EditHistory>>;
   undoEdit(documentId: string): Promise<ApiResult<EditHistory>>;
   redoEdit(documentId: string): Promise<ApiResult<EditHistory>>;
+  /** Jumps to a point in the history. Undo and redo are this with a step of one. */
+  seekEdit(documentId: string, cursor: number): Promise<ApiResult<EditHistory>>;
   resetEdits(documentId: string): Promise<ApiResult<EditHistory>>;
   /** Reads the stack without changing it, so a freshly opened document is known. */
   readHistory(documentId: string): Promise<ApiResult<EditHistory>>;

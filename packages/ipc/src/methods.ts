@@ -45,6 +45,7 @@ export interface EngineMethods {
   };
   'edit.undo': { params: { documentId: string }; result: EditHistory };
   'edit.redo': { params: { documentId: string }; result: EditHistory };
+  'edit.seek': { params: { documentId: string; cursor: number }; result: EditHistory };
   'edit.reset': { params: { documentId: string }; result: EditHistory };
   'edit.history': { params: { documentId: string }; result: EditHistory };
 
