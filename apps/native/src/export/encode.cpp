@@ -10,6 +10,11 @@
 namespace photoy {
 namespace {
 
+/// JPEG has no alpha channel. Writing one and letting the encoder drop it would
+/// silently bring a removed background back, so the image is composited onto
+/// white first.
+bool FormatCarriesAlpha(ImageFormat format) noexcept { return format != ImageFormat::kJpeg; }
+
 /// Only PNG and TIFF can carry more than 8 bits per channel.
 bool FormatSupportsSixteenBit(ImageFormat format) noexcept {
   return format == ImageFormat::kPng || format == ImageFormat::kTiff;
@@ -38,10 +43,13 @@ std::vector<std::uint8_t> Encode(const Image16& working, const EncodeOptions& op
   // The colour conversion happens here rather than inside each encoder, so
   // there is exactly one place where working-space pixels become file pixels.
   if (options.prefer_sixteen_bit && FormatSupportsSixteenBit(options.format)) {
-    const Image16 output = ComposeToOutput16(working, options.layers, options.masks, options.space, token);
+    const Image16 output = ComposeToOutput16(working, options.layers, options.masks,
+                                             options.space, token,
+                                             !FormatCarriesAlpha(options.format));
     return EncodeFormat(OutputImage::From(output), options);
   }
-  const Image8 output = ComposeToOutput8(working, options.layers, options.masks, options.space, token);
+  const Image8 output = ComposeToOutput8(working, options.layers, options.masks, options.space,
+                                         token, !FormatCarriesAlpha(options.format));
   return EncodeFormat(OutputImage::From(output), options);
 }
 

@@ -16,7 +16,20 @@ namespace photoy {
  * cannot be removed, reordered or adjusted. It is the visual proof of the
  * non-destructive model - whatever is done above it, it is still there.
  */
-enum class LayerKind { kBackground, kAdjustment };
+enum class LayerKind { kBackground, kAdjustment, kMatte };
+
+/// What takes the place of what a matte layer removes.
+enum class FillKind { kTransparent, kColor };
+
+const char* FillKindName(FillKind kind) noexcept;
+FillKind FillKindFromName(const std::string& name) noexcept;
+
+/// A colour the user picked, in sRGB, 0-1 per channel.
+struct FillColor {
+  float r = 1.0f;
+  float g = 1.0f;
+  float b = 1.0f;
+};
 
 /// How a layer's result is mixed back into what is beneath it.
 enum class BlendMode { kNormal, kMultiply, kScreen, kOverlay, kSoftLight };
@@ -36,6 +49,17 @@ struct Layer {
   Adjustments adjustments;
   /// Where the layer applies. A layer without one applies everywhere.
   Mask mask;
+
+  /**
+   * kMatte: what replaces the part the mask excludes.
+   *
+   * A matte layer is how a background is removed. It is a layer rather than a
+   * destructive operation for the same reason everything else here is: the
+   * original stays underneath, and the removal can be undone, remasked or
+   * turned off without the photograph having been touched.
+   */
+  FillKind fill = FillKind::kTransparent;
+  FillColor color;
   /// Shown in the layers panel. Empty means the UI names it by kind.
   std::string name;
 };
@@ -58,9 +82,13 @@ class CompiledLayer {
   /// True when the layer would leave every pixel exactly as it found it.
   bool transparent() const noexcept { return transparent_; }
 
-  void Apply(float& r, float& g, float& b, int x, int y) const noexcept;
+  void Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept;
 
  private:
+  LayerKind kind_ = LayerKind::kAdjustment;
+  FillKind fill_ = FillKind::kTransparent;
+  /// Converted to the working space once, so the loop is a blend and no more.
+  float fill_color_[3] = {1.0f, 1.0f, 1.0f};
   CompiledAdjustments adjustments_;
   CompiledMask mask_;
   BlendMode blend_ = BlendMode::kNormal;

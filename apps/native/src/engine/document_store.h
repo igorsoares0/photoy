@@ -79,16 +79,16 @@ struct Document {
    * the buffers go into the container's own `masks/` directory.
    */
   std::uint64_t StoreMask(MaskBuffer buffer);
-  std::shared_ptr<const MaskBuffer> FindMask(std::uint64_t id) const;
+  std::shared_ptr<const MaskBuffer> FindMask(std::uint64_t mask_id) const;
   /// Restores a mask under a known identifier, as when a project is opened.
-  void RestoreMask(std::uint64_t id, MaskBuffer buffer);
+  void RestoreMask(std::uint64_t mask_id, MaskBuffer buffer);
   std::vector<std::pair<std::uint64_t, std::shared_ptr<const MaskBuffer>>> AllMasks() const;
 
   /// The same mask resampled to a render's size, kept so a slider does not
   /// resample it once a frame.
   std::shared_ptr<const MaskBuffer> CachedFittedMask(const PreviewPlan& plan,
-                                                     std::uint64_t id) const;
-  void CacheFittedMask(const PreviewPlan& plan, std::uint64_t id,
+                                                     std::uint64_t mask_id) const;
+  void CacheFittedMask(const PreviewPlan& plan, std::uint64_t mask_id,
                        std::shared_ptr<const MaskBuffer> fitted);
 
  private:

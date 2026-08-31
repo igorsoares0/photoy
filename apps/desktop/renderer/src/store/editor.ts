@@ -3,6 +3,8 @@ import type {
   AdjustmentKey,
   Adjustments,
   BlendMode,
+  FillColor,
+  FillKind,
   Layer,
   Mask,
   Rect,
@@ -117,6 +119,9 @@ interface EditorState {
   setLayerMask(id: number, mask: Mask, continuing?: boolean): Promise<void>;
   /** Runs segmentation and attaches the result to the layer as its mask. */
   segmentIntoMask(id: number): Promise<void>;
+  /** Segments the subject and cuts everything else away, as one action. */
+  removeBackground(): Promise<void>;
+  setLayerFill(id: number, fill: FillKind, color?: FillColor): Promise<void>;
   moveLayer(id: number, delta: number): Promise<void>;
 
   beginCrop(): void;
@@ -548,6 +553,56 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
     set({ busy: null });
     await get().setLayerMask(id, {
+      ...NO_MASK,
+      kind: 'raster',
+      raster: segmented.value.raster,
+      rasterWidth: segmented.value.width,
+      rasterHeight: segmented.value.height,
+    });
+  },
+
+  setLayerFill: async (id, fill, color) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'setLayerFill', layerId: id, fill, color }),
+    );
+  },
+
+  removeBackground: async () => {
+    const document = get().document;
+    if (document === null) return;
+
+    set({ busy: 'segmenting', error: null });
+    const segmented = await window.photoy.segment(document.id);
+    if (!segmented.ok) {
+      set({ busy: null, error: segmented.error });
+      return;
+    }
+    set({ busy: null });
+
+    // Running it a second time redoes the removal rather than stacking a second
+    // matte on top of the first, which would cut the subject away twice.
+    let target = get().history?.layers.find((layer) => layer.kind === 'matte') ?? null;
+    if (target === null) {
+      const before = get().history?.layers.map((layer) => layer.id) ?? [];
+      await adoptHistory(
+        set,
+        get,
+        await window.photoy.applyEdit(document.id, {
+          kind: 'addLayer',
+          layerKind: 'matte',
+          name: 'Fundo',
+        }),
+      );
+      target = get().history?.layers.find((layer) => !before.includes(layer.id)) ?? null;
+      if (target === null) return;
+    }
+
+    set({ selectedLayerId: target.id });
+    await get().setLayerMask(target.id, {
       ...NO_MASK,
       kind: 'raster',
       raster: segmented.value.raster,

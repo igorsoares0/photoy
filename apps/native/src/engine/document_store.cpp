@@ -28,22 +28,22 @@ void Document::CacheBase(const PreviewPlan& plan, std::shared_ptr<const Image16>
 
 std::uint64_t Document::StoreMask(MaskBuffer buffer) {
   const std::lock_guard<std::mutex> lock(masks_mutex_);
-  const std::uint64_t id = next_mask_++;
-  masks_[id] = std::make_shared<const MaskBuffer>(std::move(buffer));
+  const std::uint64_t mask_id = next_mask_++;
+  masks_[mask_id] = std::make_shared<const MaskBuffer>(std::move(buffer));
   fitted_.clear();
-  return id;
+  return mask_id;
 }
 
-void Document::RestoreMask(std::uint64_t id, MaskBuffer buffer) {
+void Document::RestoreMask(std::uint64_t mask_id, MaskBuffer buffer) {
   const std::lock_guard<std::mutex> lock(masks_mutex_);
-  masks_[id] = std::make_shared<const MaskBuffer>(std::move(buffer));
-  next_mask_ = std::max(next_mask_, id + 1);
+  masks_[mask_id] = std::make_shared<const MaskBuffer>(std::move(buffer));
+  next_mask_ = std::max(next_mask_, mask_id + 1);
   fitted_.clear();
 }
 
-std::shared_ptr<const MaskBuffer> Document::FindMask(std::uint64_t id) const {
+std::shared_ptr<const MaskBuffer> Document::FindMask(std::uint64_t mask_id) const {
   const std::lock_guard<std::mutex> lock(masks_mutex_);
-  const auto found = masks_.find(id);
+  const auto found = masks_.find(mask_id);
   return found == masks_.end() ? nullptr : found->second;
 }
 
@@ -54,21 +54,21 @@ std::vector<std::pair<std::uint64_t, std::shared_ptr<const MaskBuffer>>> Documen
 }
 
 std::shared_ptr<const MaskBuffer> Document::CachedFittedMask(const PreviewPlan& plan,
-                                                             std::uint64_t id) const {
+                                                             std::uint64_t mask_id) const {
   const std::lock_guard<std::mutex> lock(masks_mutex_);
   if (!plan.Matches(fitted_plan_)) return nullptr;
-  const auto found = fitted_.find(id);
+  const auto found = fitted_.find(mask_id);
   return found == fitted_.end() ? nullptr : found->second;
 }
 
-void Document::CacheFittedMask(const PreviewPlan& plan, std::uint64_t id,
+void Document::CacheFittedMask(const PreviewPlan& plan, std::uint64_t mask_id,
                                std::shared_ptr<const MaskBuffer> fitted) {
   const std::lock_guard<std::mutex> lock(masks_mutex_);
   if (!plan.Matches(fitted_plan_)) {
     fitted_.clear();
     fitted_plan_ = plan;
   }
-  fitted_[id] = std::move(fitted);
+  fitted_[mask_id] = std::move(fitted);
 }
 
 std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {

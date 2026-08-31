@@ -9,7 +9,7 @@ import { PanelSection } from './PanelSection';
  * The style guide allows exactly this: Unicode marks for layer type, because
  * the shape carries the meaning. There is no icon font and no emoji anywhere.
  */
-const GLYPH: Record<string, string> = { background: '▣', adjustment: '☀' };
+const GLYPH: Record<string, string> = { background: '\u25A3', adjustment: '\u2600', matte: '\u25E8' };
 
 function Row({ layer, selected }: { layer: Layer; selected: boolean }): React.JSX.Element {
   const selectLayer = useEditor((state) => state.selectLayer);

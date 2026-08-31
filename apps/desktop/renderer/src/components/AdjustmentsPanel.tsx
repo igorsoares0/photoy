@@ -7,6 +7,7 @@ import { HistoryPanel } from './HistoryPanel';
 import { LayersPanel } from './LayersPanel';
 import { TabBar } from './TabBar';
 import { MaskPanel } from './MaskPanel';
+import { MattePanel } from './MattePanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
 
@@ -117,6 +118,8 @@ export function AdjustmentsPanel(): React.JSX.Element {
   // between you and a slider.
   const editable = layer?.kind === 'adjustment' || !hasAdjustmentLayer;
   const adjustmentLayer = layer?.kind === 'adjustment' ? layer : null;
+  // A matte layer removes; it does not adjust. Its own controls take the panel.
+  const matteLayer = layer?.kind === 'matte' ? layer : null;
 
   return (
     <aside
@@ -147,7 +150,9 @@ export function AdjustmentsPanel(): React.JSX.Element {
             style={{ padding: 'var(--pad-panel)', gap: 'var(--gap-group)' }}
           >
             <LayersPanel />
-            {editable ? (
+            {matteLayer !== null ? (
+              <MattePanel layer={matteLayer} />
+            ) : editable ? (
               <>
                 {adjustmentLayer !== null ? (
                   <PanelSection label="Mistura">

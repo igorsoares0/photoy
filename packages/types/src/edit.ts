@@ -71,7 +71,17 @@ export function isMaskStale(mask: Mask, width: number, height: number): boolean 
   return mask.kind === 'raster' && (mask.rasterWidth !== width || mask.rasterHeight !== height);
 }
 
-export type LayerKind = 'background' | 'adjustment';
+export type LayerKind = 'background' | 'adjustment' | 'matte';
+
+/** What takes the place of what a matte layer removes. */
+export type FillKind = 'transparent' | 'color';
+
+/** A picked colour, in sRGB, 0 to 1 per channel. */
+export interface FillColor {
+  r: number;
+  g: number;
+  b: number;
+}
 
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'soft-light';
 
@@ -90,6 +100,9 @@ export interface Layer {
   opacity: number;
   blend: BlendMode;
   name: string;
+  /** kind 'matte': what replaces the part the mask excludes. */
+  fill: FillKind;
+  color: FillColor;
   adjustments: Adjustments;
   /** Where the layer applies. `kind: 'none'` means everywhere. */
   mask: Mask;
@@ -158,6 +171,15 @@ export interface AdjustOperation {
 export interface AddLayerOperation {
   kind: 'addLayer';
   name?: string;
+  /** Defaults to an adjustment layer. */
+  layerKind?: LayerKind;
+}
+
+export interface SetLayerFillOperation {
+  kind: 'setLayerFill';
+  layerId: number;
+  fill: FillKind;
+  color?: FillColor;
 }
 
 export interface LayerOperation {
@@ -183,6 +205,7 @@ export type Operation =
   | CropOperation
   | AdjustOperation
   | AddLayerOperation
+  | SetLayerFillOperation
   | LayerOperation;
 
 /** An operation as it comes back from the engine, with its assigned id. */

@@ -158,8 +158,8 @@ não existe versão divergente entre o main process e o renderer.
 
 ### O que ainda não existe
 
-Sem camadas, ajustes, máscaras, IA, projeto `.myphoto`, undo/redo ou GPU — tudo isso é
-Milestone 2 em diante. Consequências visíveis hoje:
+Sem GPU e sem pipeline em tiles — Milestone 4 em diante. Consequências visíveis
+hoje:
 
 - **O preview sai sempre em sRGB de 8 bits.** O Chromium converte disso para o perfil da
   tela ao compor, então numa tela comum a imagem está correta. O que se perde é o que
@@ -177,6 +177,10 @@ Milestone 2 em diante. Consequências visíveis hoje:
 - **Um quadro de slider custa ~31 ms**, dos quais cerca de metade é o transporte dos 3,7 MB
   do preview pelo pipe. Dá ~32 fps. Baixar a resolução do preview durante o arrasto e subir
   ao soltar é o próximo ganho fácil, e a API já aceita isso sem mudança.
+- **O fundo só vira transparente ou cor.** Preencher com uma imagem ou com um desfoque
+  da própria foto (§19) ainda não existe; a camada matte já tem onde guardar a escolha.
+- **A qualidade da segmentação não foi medida.** Todo teste usa um sujeito sintético, onde
+  o modelo acerta a cabeça e erra os ombros. Julgar isso pede fotografias de verdade.
 - **Faltam os ajustes que a §9 lista além destes**: matiz, vibração, nitidez, clareza,
   vinheta e grão. E `resize`, o único item do M2 ainda em aberto.
 - **Jobs reportam estado, não porcentagem.** `queued → running → completed/cancelled/failed`
@@ -251,6 +255,30 @@ Máscaras geradas são pixels e vivem no diretório `masks/` do container, uma P
 em tons de cinza por máscara — em tons de cinza porque é o que uma máscara é, e
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
+
+### Remover fundo
+
+Remover o fundo **é uma camada**, não uma alteração da fotografia. A camada de
+tipo *matte* carrega uma máscara — normalmente a que a segmentação produziu — e
+tudo que a máscara não marca deixa de aparecer. Os pixels continuam lá: dá para
+desfazer, suavizar a borda, inverter, esconder a camada ou trocar o fundo depois
+sem segmentar de novo. É a mesma razão de a pilha de edição ser o estado.
+
+O que entra no lugar do fundo tem duas opções hoje, **transparente e cor**.
+Imagem e desfoque (§19) ficam para depois, por decisão minha e do usuário: as
+duas primeiras fecham o caso comum e a exportação já sabe carregar alfa.
+
+Um detalhe que só aparece na exportação: **JPEG não tem canal alfa**. Deixar o
+encoder simplesmente descartá-lo traria o fundo removido de volta, calado, o que
+é pior que qualquer falha visível. Então quando o formato não carrega alfa a
+imagem é composta sobre branco antes de sair — e a composição acontece no espaço
+de trabalho, em luz linear, para que uma borda suave misture luz e não valores
+já codificados. `FormatCarriesAlpha()` em `export/encode.cpp` é a única coisa que
+decide isso; há teste que exporta em JPEG e confere que o canto ficou branco, e
+não o fundo original.
+
+O preenchimento por cor é escolhido em sRGB, na UI, e convertido para o espaço de
+trabalho **uma vez**, quando a camada é compilada — não por pixel.
 
 ### O projeto
 

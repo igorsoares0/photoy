@@ -12,6 +12,7 @@ export type IconName =
   | 'flipHorizontal'
   | 'flipVertical'
   | 'crop'
+  | 'subject'
   | 'undo'
   | 'redo'
   | 'reset';
@@ -36,6 +37,9 @@ const PATHS: Record<IconName, string[]> = {
     'M20 12h2',
   ],
   crop: ['M6 2v14a2 2 0 0 0 2 2h14', 'M18 22V8a2 2 0 0 0-2-2H2'],
+  // Head and shoulders: the subject is what background removal keeps, so the
+  // icon draws that rather than the thing being taken away.
+  subject: ['M19 21a7 7 0 0 0-14 0', 'M16 8a4 4 0 1 1-8 0 4 4 0 1 1 8 0'],
   undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
   redo: ['m15 14 5-5-5-5', 'M20 9H9.5a5.5 5.5 0 0 0 0 11H13'],
   reset: ['M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8', 'M3 3v5h5'],

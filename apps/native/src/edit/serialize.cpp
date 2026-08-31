@@ -85,6 +85,7 @@ json ToJson(const Operation& operation) {
       break;
     case OperationKind::kAddLayer:
       entry["name"] = operation.name;
+      entry["layerKind"] = LayerKindName(operation.layer_kind);
       break;
     case OperationKind::kRemoveLayer:
       entry["layerId"] = operation.target_layer;
@@ -108,6 +109,12 @@ json ToJson(const Operation& operation) {
     case OperationKind::kSetLayerMask:
       entry["layerId"] = operation.target_layer;
       entry["mask"] = MaskToJson(operation.mask);
+      break;
+    case OperationKind::kSetLayerFill:
+      entry["layerId"] = operation.target_layer;
+      entry["fill"] = FillKindName(operation.fill);
+      entry["color"] = json{{"r", operation.color.r}, {"g", operation.color.g},
+                            {"b", operation.color.b}};
       break;
     case OperationKind::kFlipHorizontal:
     case OperationKind::kFlipVertical:
@@ -163,6 +170,20 @@ Operation FromJson(const json& value) {
   if (kind == "addLayer") {
     operation.kind = OperationKind::kAddLayer;
     operation.name = value.value("name", std::string{});
+    operation.layer_kind = value.value("layerKind", std::string("adjustment")) == "matte"
+                               ? LayerKind::kMatte
+                               : LayerKind::kAdjustment;
+    return operation;
+  }
+  if (kind == "setLayerFill") {
+    operation.kind = OperationKind::kSetLayerFill;
+    operation.target_layer = LayerId(value);
+    operation.fill = FillKindFromName(value.value("fill", std::string("transparent")));
+    const json& c = value.contains("color") && value.at("color").is_object() ? value.at("color")
+                                                                            : json::object();
+    operation.color.r = std::clamp(OptionalFloat(c, "r", 1.0f), 0.0f, 1.0f);
+    operation.color.g = std::clamp(OptionalFloat(c, "g", 1.0f), 0.0f, 1.0f);
+    operation.color.b = std::clamp(OptionalFloat(c, "b", 1.0f), 0.0f, 1.0f);
     return operation;
   }
   if (kind == "removeLayer") {

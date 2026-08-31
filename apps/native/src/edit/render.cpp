@@ -32,8 +32,8 @@ Image16 CopyRegion(const Image16& source, const Rect& region, const Cancellation
 /// Wraps a compiled layer as the per-pixel step the converter takes.
 struct LayerStep {
   const CompiledLayer& layer;
-  void operator()(float& r, float& g, float& b, int x, int y) const noexcept {
-    layer.Apply(r, g, b, x, y);
+  void operator()(float& r, float& g, float& b, float& a, int x, int y) const noexcept {
+    layer.Apply(r, g, b, a, x, y);
   }
 };
 
@@ -50,7 +50,8 @@ void ApplyInPlace(Image16& image, const CompiledLayer& layer, const Cancellation
       float r = row[index + 0] * kFromSample;
       float g = row[index + 1] * kFromSample;
       float b = row[index + 2] * kFromSample;
-      layer.Apply(r, g, b, x, y);
+      float a = row[index + 3] * kFromSample;
+      layer.Apply(r, g, b, a, x, y);
       const auto store = [](float value) {
         const float scaled = value * 65535.0f + 0.5f;
         return static_cast<std::uint16_t>(scaled <= 0.0f ? 0.0f
@@ -59,6 +60,7 @@ void ApplyInPlace(Image16& image, const CompiledLayer& layer, const Cancellation
       row[index + 0] = store(r);
       row[index + 1] = store(g);
       row[index + 2] = store(b);
+      row[index + 3] = store(a);
     }
   }
 }
@@ -68,7 +70,7 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
                                    int width, int height) {
   std::vector<CompiledLayer> compiled;
   for (const Layer& layer : layers) {
-    if (layer.kind != LayerKind::kAdjustment || !layer.visible) continue;
+    if (layer.kind == LayerKind::kBackground || !layer.visible) continue;
     const MaskBuffer* raster = nullptr;
     if (layer.mask.kind == MaskKind::kRaster) {
       const auto found = masks.find(layer.mask.raster);
@@ -84,7 +86,7 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
 template <typename Out>
 TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
                           const FittedMasks& masks, color::OutputSpace space,
-                          const CancellationTokenPtr& token) {
+                          const CancellationTokenPtr& token, bool flatten) {
   // Masks are described in fractions of the document, so they compile against
   // whatever resolution this render happens to be: the same mask at preview
   // size and at full size, with no downscale in between.
@@ -93,7 +95,7 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
   TImageBuffer<Out> result = TImageBuffer<Out>::Create(base.width(), base.height());
 
   if (compiled.empty()) {
-    color::ConvertBanded(base, result, space, token, color::NoPreProcess{});
+    color::ConvertBanded(base, result, space, token, color::NoPreProcess{}, flatten);
     return result;
   }
 
@@ -109,7 +111,7 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
     }
     input = &scratch;
   }
-  color::ConvertBanded(*input, result, space, token, LayerStep{compiled.back()});
+  color::ConvertBanded(*input, result, space, token, LayerStep{compiled.back()}, flatten);
   return result;
 }
 
@@ -164,14 +166,14 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
 
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
                         const FittedMasks& masks, color::OutputSpace space,
-                        const CancellationTokenPtr& token) {
-  return Compose<std::uint8_t>(base, layers, masks, space, token);
+                        const CancellationTokenPtr& token, bool flatten) {
+  return Compose<std::uint8_t>(base, layers, masks, space, token, flatten);
 }
 
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
                           const FittedMasks& masks, color::OutputSpace space,
-                          const CancellationTokenPtr& token) {
-  return Compose<std::uint16_t>(base, layers, masks, space, token);
+                          const CancellationTokenPtr& token, bool flatten) {
+  return Compose<std::uint16_t>(base, layers, masks, space, token, flatten);
 }
 
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

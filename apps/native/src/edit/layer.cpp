@@ -3,8 +3,17 @@
 #include <algorithm>
 #include <cmath>
 
+#include "color/matrix.h"
+#include "color/primaries.h"
+
 namespace photoy {
 namespace {
+
+/// The sRGB transfer curve, inverted: a picked colour arrives encoded.
+float DecodeSrgb(float encoded) noexcept {
+  if (encoded <= 0.04045f) return encoded / 12.92f;
+  return std::pow((encoded + 0.055f) / 1.055f, 2.4f);
+}
 
 float SoftLight(float under, float over) noexcept {
   // The W3C formulation, which is the one that matches what other editors call
@@ -18,7 +27,20 @@ float SoftLight(float under, float over) noexcept {
 }  // namespace
 
 const char* LayerKindName(LayerKind kind) noexcept {
-  return kind == LayerKind::kBackground ? "background" : "adjustment";
+  switch (kind) {
+    case LayerKind::kBackground: return "background";
+    case LayerKind::kMatte: return "matte";
+    case LayerKind::kAdjustment: break;
+  }
+  return "adjustment";
+}
+
+const char* FillKindName(FillKind kind) noexcept {
+  return kind == FillKind::kColor ? "color" : "transparent";
+}
+
+FillKind FillKindFromName(const std::string& name) noexcept {
+  return name == "color" ? FillKind::kColor : FillKind::kTransparent;
 }
 
 const char* BlendModeName(BlendMode mode) noexcept {
@@ -53,10 +75,31 @@ float Blend(BlendMode mode, float under, float over) noexcept {
 }
 
 CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster)
-    : adjustments_(layer.adjustments),
+    : kind_(layer.kind),
+      fill_(layer.fill),
+      adjustments_(layer.adjustments),
       mask_(layer.mask, width, height, raster),
       blend_(layer.blend),
       opacity_(std::clamp(layer.opacity, 0.0f, 1.0f)) {
+  if (kind_ == LayerKind::kMatte) {
+    // A matte with nothing to mask covers the whole frame, which leaves it
+    // exactly as it found it.
+    transparent_ = opacity_ <= 0.0f || mask_.open();
+    if (fill_ == FillKind::kColor) {
+      // The picked colour is sRGB; the composite is linear working space. The
+      // conversion happens once here rather than once per pixel.
+      const color::Mat3 to_working = color::Invert(color::WorkingToLinear(color::kSrgbSpace));
+      const float linear[3] = {DecodeSrgb(layer.color.r), DecodeSrgb(layer.color.g),
+                               DecodeSrgb(layer.color.b)};
+      for (int row = 0; row < 3; ++row) {
+        fill_color_[row] = static_cast<float>(to_working.At(row, 0) * linear[0] +
+                                              to_working.At(row, 1) * linear[1] +
+                                              to_working.At(row, 2) * linear[2]);
+      }
+    }
+    return;
+  }
+
   // With a mask the mix varies per pixel, so the replacement shortcut is off.
   passthrough_ = blend_ == BlendMode::kNormal && opacity_ >= 1.0f && mask_.open();
   // Under a normal blend a neutral adjustment mixes a value with itself, which
@@ -64,8 +107,30 @@ CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const Ma
   transparent_ = opacity_ <= 0.0f || (adjustments_.neutral() && blend_ == BlendMode::kNormal);
 }
 
-void CompiledLayer::Apply(float& r, float& g, float& b, int x, int y) const noexcept {
+void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept {
   if (transparent_) return;
+
+  if (kind_ == LayerKind::kMatte) {
+    // The mask marks what stays. Everything else is what the fill replaces.
+    const float keep = opacity_ < 1.0f ? 1.0f - opacity_ * (1.0f - mask_.At(x, y))
+                                       : mask_.At(x, y);
+    if (fill_ == FillKind::kTransparent) {
+      a *= keep;
+      return;
+    }
+    // Standard over-compositing with unpremultiplied colour: what is left of
+    // the photograph sits on top of an opaque fill.
+    const float subject = a * keep;
+    const float behind = 1.0f - keep;
+    const float result = subject + behind;
+    if (result > 0.0f) {
+      r = (r * subject + fill_color_[0] * behind) / result;
+      g = (g * subject + fill_color_[1] * behind) / result;
+      b = (b * subject + fill_color_[2] * behind) / result;
+    }
+    a = result;
+    return;
+  }
 
   const float coverage = opacity_ * mask_.At(x, y);
   if (coverage <= 0.0f) return;

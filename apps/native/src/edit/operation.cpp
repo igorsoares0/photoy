@@ -52,6 +52,7 @@ std::string Operation::KindName() const {
     case OperationKind::kSetLayerOpacity: return "setLayerOpacity";
     case OperationKind::kSetLayerBlend: return "setLayerBlend";
     case OperationKind::kSetLayerMask: return "setLayerMask";
+    case OperationKind::kSetLayerFill: return "setLayerFill";
   }
   return "unknown";
 }
@@ -89,6 +90,7 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
       case OperationKind::kSetLayerOpacity:
       case OperationKind::kSetLayerBlend:
       case OperationKind::kSetLayerMask:
+      case OperationKind::kSetLayerFill:
         break;  // colour and compositing only; the shape is untouched
       case OperationKind::kCrop: {
         // The crop is expressed against what the user sees, so it is mapped
@@ -130,10 +132,10 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
   layers.push_back(Layer{0, LayerKind::kBackground, true, 1.0f, BlendMode::kNormal, {}, {}});
   std::uint64_t next_id = 1;
 
-  const auto add = [&layers, &next_id](std::string name) -> Layer& {
+  const auto add = [&layers, &next_id](std::string name, LayerKind kind) -> Layer& {
     Layer layer;
     layer.id = next_id++;
-    layer.kind = LayerKind::kAdjustment;
+    layer.kind = kind;
     layer.name = std::move(name);
     layers.push_back(layer);
     return layers.back();
@@ -142,14 +144,14 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
   for (const Operation& operation : operations) {
     switch (operation.kind) {
       case OperationKind::kAddLayer:
-        add(operation.name);
+        add(operation.name, operation.layer_kind);
         break;
 
       case OperationKind::kAdjust: {
         Layer* target = Resolve(layers, operation.target_layer);
         // An adjustment with nowhere to go creates the layer it needs, so a
         // document can be adjusted without anyone having to think about layers.
-        if (target == nullptr) target = &add({});
+        if (target == nullptr) target = &add({}, LayerKind::kAdjustment);
         target->adjustments = operation.adjustments;
         break;
       }
@@ -194,6 +196,14 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
       case OperationKind::kSetLayerMask: {
         Layer* target = Resolve(layers, operation.target_layer);
         if (target != nullptr) target->mask = operation.mask;
+        break;
+      }
+      case OperationKind::kSetLayerFill: {
+        Layer* target = Resolve(layers, operation.target_layer);
+        if (target != nullptr) {
+          target->fill = operation.fill;
+          target->color = operation.color;
+        }
         break;
       }
 

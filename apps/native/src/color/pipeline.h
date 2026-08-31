@@ -40,13 +40,15 @@ inline constexpr int kBandHeight = 64;
  */
 template <typename Out, typename PreProcess>
 void ConvertBanded(const Image16& working, TImageBuffer<Out>& result, OutputSpace space,
-                   const CancellationTokenPtr& token, const PreProcess& pre) {
+                   const CancellationTokenPtr& token, const PreProcess& pre,
+                   bool flatten = false) {
   const OutputConverter& converter = ConverterFor(space);
   for (int y = 0; y < working.height(); y += kBandHeight) {
     if (token->cancelled()) {
       throw EngineException(error_code::kCancelled, "Render cancelled", "superseded");
     }
-    converter.ConvertRows(working, result, y, std::min(kBandHeight, working.height() - y), pre);
+    converter.ConvertRows(working, result, y, std::min(kBandHeight, working.height() - y), pre,
+                          flatten);
   }
 }
 

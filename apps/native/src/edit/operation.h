@@ -24,6 +24,7 @@ enum class OperationKind {
   kSetLayerOpacity,
   kSetLayerBlend,
   kSetLayerMask,
+  kSetLayerFill,
 };
 
 /**
@@ -57,8 +58,12 @@ struct Operation {
   bool flag = true;
   float amount = 1.0f;
   BlendMode blend = BlendMode::kNormal;
-  /// kAddLayer: the name shown in the panel.
+  /// kAddLayer: the name shown in the panel, and what kind to create.
   std::string name;
+  LayerKind layer_kind = LayerKind::kAdjustment;
+  /// kSetLayerFill: what replaces the part a matte removes.
+  FillKind fill = FillKind::kTransparent;
+  FillColor color;
   /// kSetLayerMask: where the layer applies.
   Mask mask;
 

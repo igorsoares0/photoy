@@ -17,7 +17,7 @@ namespace photoy::color {
  * nothing and compiles away entirely.
  */
 struct NoPreProcess {
-  void operator()(float&, float&, float&, int, int) const noexcept {}
+  void operator()(float&, float&, float&, float&, int, int) const noexcept {}
 };
 
 /**
@@ -41,16 +41,21 @@ class OutputConverter {
 
   /// Converts `rows` rows starting at `first_row`. Rows are independent, which
   /// is what lets the caller band the work and check for cancellation between.
+  /**
+   * `flatten` composites onto white and forces the result opaque, for the
+   * formats that cannot carry transparency. Done here, in the working space, so
+   * a soft edge blends in linear light rather than in encoded values.
+   */
   template <typename PreProcess = NoPreProcess>
   void ConvertRows(const Image16& source, Image8& target, int first_row, int rows,
-                   const PreProcess& pre = PreProcess{}) const {
-    Convert(source, target, first_row, rows, pre, 255.0f);
+                   const PreProcess& pre = PreProcess{}, bool flatten = false) const {
+    Convert(source, target, first_row, rows, pre, 255.0f, flatten);
   }
 
   template <typename PreProcess = NoPreProcess>
   void ConvertRows(const Image16& source, Image16& target, int first_row, int rows,
-                   const PreProcess& pre = PreProcess{}) const {
-    Convert(source, target, first_row, rows, pre, 65535.0f);
+                   const PreProcess& pre = PreProcess{}, bool flatten = false) const {
+    Convert(source, target, first_row, rows, pre, 65535.0f, flatten);
   }
 
  private:
@@ -68,7 +73,7 @@ class OutputConverter {
 
   template <typename Out, typename PreProcess>
   void Convert(const Image16& source, TImageBuffer<Out>& target, int first_row, int rows,
-               const PreProcess& pre, float full_scale) const {
+               const PreProcess& pre, float full_scale, bool flatten) const {
     constexpr float kFromSample = 1.0f / 65535.0f;
     for (int y = first_row; y < first_row + rows; ++y) {
       const std::uint16_t* in = source.Row(y);
@@ -78,8 +83,19 @@ class OutputConverter {
         float r = in[index + 0] * kFromSample;
         float g = in[index + 1] * kFromSample;
         float b = in[index + 2] * kFromSample;
+        float a = in[index + 3] * kFromSample;
 
-        pre(r, g, b, x, y);
+        pre(r, g, b, a, x, y);
+
+        if (flatten && a < 1.0f) {
+          // White in the working space is its own white point, which is what
+          // encodes to white on the way out.
+          const float behind = 1.0f - a;
+          r = r * a + behind;
+          g = g * a + behind;
+          b = b * a + behind;
+          a = 1.0f;
+        }
 
         const float lr = matrix_[0] * r + matrix_[1] * g + matrix_[2] * b;
         const float lg = matrix_[3] * r + matrix_[4] * g + matrix_[5] * b;
@@ -88,9 +104,8 @@ class OutputConverter {
         out[index + 0] = Quantise<Out>(Encode(lr), full_scale);
         out[index + 1] = Quantise<Out>(Encode(lg), full_scale);
         out[index + 2] = Quantise<Out>(Encode(lb), full_scale);
-        // 65535 narrows to 255 exactly, and every other value rounds to nearest.
-        out[index + 3] = static_cast<Out>(
-            sizeof(Out) == 1 ? ((in[index + 3] * 255u + 32895u) >> 16) : in[index + 3]);
+        // Alpha is linear coverage, not light: it is scaled, never encoded.
+        out[index + 3] = Quantise<Out>(a, full_scale);
       }
     }
   }
