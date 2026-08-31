@@ -1,10 +1,11 @@
 import type { Layer, Mask, MaskKind } from '@photoy/types';
-import { NO_MASK } from '@photoy/types';
-import { useEditor } from '../store/editor';
+import { NO_MASK, isMaskStale } from '@photoy/types';
+import { renderedSize, useEditor } from '../store/editor';
 import { formatDecimal, formatInteger } from '../lib/format';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
 
+/** Raster is not offered here: it is produced, not chosen. */
 const KINDS: Array<{ value: MaskKind; label: string }> = [
   { value: 'none', label: 'Nenhuma' },
   { value: 'linear', label: 'Linear' },
@@ -20,7 +21,12 @@ const KINDS: Array<{ value: MaskKind; label: string }> = [
  */
 export function MaskPanel({ layer }: { layer: Layer }): React.JSX.Element {
   const setLayerMask = useEditor((state) => state.setLayerMask);
+  const segmentIntoMask = useEditor((state) => state.segmentIntoMask);
+  const segmenting = useEditor((state) => state.busy === 'segmenting');
+  const documentWidth = useEditor((state) => renderedSize(state)?.width ?? 0);
+  const documentHeight = useEditor((state) => renderedSize(state)?.height ?? 0);
   const mask = layer.mask;
+  const stale = isMaskStale(mask, documentWidth, documentHeight);
 
   const update = (patch: Partial<Mask>, continuing = false) =>
     void setLayerMask(layer.id, { ...mask, ...patch }, continuing);
@@ -73,7 +79,39 @@ export function MaskPanel({ layer }: { layer: Layer }): React.JSX.Element {
         })}
       </div>
 
-      {mask.kind === 'none' ? null : (
+      {/* The only violet-filled control in the product: this is where a model
+          touches the picture, which is exactly what the colour is reserved for. */}
+      <button
+        type="button"
+        onClick={() => void segmentIntoMask(layer.id)}
+        disabled={segmenting}
+        className="photoy-chip"
+        style={{
+          height: 30,
+          borderRadius: 'var(--radius-control)',
+          fontSize: 'var(--text-control)',
+          border: '1px solid var(--accent-border)',
+          background: mask.kind === 'raster' ? 'var(--accent-surface)' : 'transparent',
+          color: 'var(--accent-text)',
+          opacity: segmenting ? 0.6 : 1,
+          transition: 'var(--transition-control)',
+        }}
+      >
+        {segmenting ? 'Selecionando…' : 'Selecionar sujeito'}
+      </button>
+
+      {mask.kind === 'raster' ? (
+        <span
+          className="numeric"
+          style={{ fontSize: 'var(--text-micro)', color: stale ? 'var(--danger)' : 'var(--fg-numeric-idle)' }}
+        >
+          {stale
+            ? 'a foto mudou de forma — refaça a seleção'
+            : `seg · ${mask.rasterWidth} × ${mask.rasterHeight}`}
+        </span>
+      ) : null}
+
+      {mask.kind === 'none' || mask.kind === 'raster' ? null : (
         <>
           {mask.kind === 'radial' ? (
             <Slider

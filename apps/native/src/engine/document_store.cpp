@@ -1,5 +1,7 @@
 #include "engine/document_store.h"
 
+#include <algorithm>
+
 #include "color/pipeline.h"
 #include "core/error.h"
 #include "core/log.h"
@@ -22,6 +24,51 @@ void Document::CacheBase(const PreviewPlan& plan, std::shared_ptr<const Image16>
   const std::lock_guard<std::mutex> lock(base_mutex_);
   base_plan_ = plan;
   base_ = std::move(base);
+}
+
+std::uint64_t Document::StoreMask(MaskBuffer buffer) {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  const std::uint64_t id = next_mask_++;
+  masks_[id] = std::make_shared<const MaskBuffer>(std::move(buffer));
+  fitted_.clear();
+  return id;
+}
+
+void Document::RestoreMask(std::uint64_t id, MaskBuffer buffer) {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  masks_[id] = std::make_shared<const MaskBuffer>(std::move(buffer));
+  next_mask_ = std::max(next_mask_, id + 1);
+  fitted_.clear();
+}
+
+std::shared_ptr<const MaskBuffer> Document::FindMask(std::uint64_t id) const {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  const auto found = masks_.find(id);
+  return found == masks_.end() ? nullptr : found->second;
+}
+
+std::vector<std::pair<std::uint64_t, std::shared_ptr<const MaskBuffer>>> Document::AllMasks()
+    const {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  return {masks_.begin(), masks_.end()};
+}
+
+std::shared_ptr<const MaskBuffer> Document::CachedFittedMask(const PreviewPlan& plan,
+                                                             std::uint64_t id) const {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  if (!plan.Matches(fitted_plan_)) return nullptr;
+  const auto found = fitted_.find(id);
+  return found == fitted_.end() ? nullptr : found->second;
+}
+
+void Document::CacheFittedMask(const PreviewPlan& plan, std::uint64_t id,
+                               std::shared_ptr<const MaskBuffer> fitted) {
+  const std::lock_guard<std::mutex> lock(masks_mutex_);
+  if (!plan.Matches(fitted_plan_)) {
+    fitted_.clear();
+    fitted_plan_ = plan;
+  }
+  fitted_[id] = std::move(fitted);
 }
 
 std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {

@@ -50,7 +50,7 @@ export async function run() {
 
   await suite.check('describe lists the mask kinds it understands', async () => {
     const { result } = await engine.call('engine.describe');
-    assert.deepEqual(result.maskKinds, ['none', 'linear', 'radial']);
+    assert.deepEqual(result.maskKinds, ['none', 'linear', 'radial', 'raster']);
     assert.ok(result.operations.includes('setLayerMask'));
   });
 

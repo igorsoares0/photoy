@@ -64,11 +64,17 @@ void ApplyInPlace(Image16& image, const CompiledLayer& layer, const Cancellation
 }
 
 /// The visible layers that actually change something, bottom first.
-std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, int width, int height) {
+std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const FittedMasks& masks,
+                                   int width, int height) {
   std::vector<CompiledLayer> compiled;
   for (const Layer& layer : layers) {
     if (layer.kind != LayerKind::kAdjustment || !layer.visible) continue;
-    CompiledLayer candidate(layer, width, height);
+    const MaskBuffer* raster = nullptr;
+    if (layer.mask.kind == MaskKind::kRaster) {
+      const auto found = masks.find(layer.mask.raster);
+      if (found != masks.end()) raster = found->second.get();
+    }
+    CompiledLayer candidate(layer, width, height, raster);
     if (candidate.transparent()) continue;
     compiled.push_back(std::move(candidate));
   }
@@ -77,11 +83,13 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, int width, 
 
 template <typename Out>
 TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
-                          color::OutputSpace space, const CancellationTokenPtr& token) {
+                          const FittedMasks& masks, color::OutputSpace space,
+                          const CancellationTokenPtr& token) {
   // Masks are described in fractions of the document, so they compile against
   // whatever resolution this render happens to be: the same mask at preview
   // size and at full size, with no downscale in between.
-  const std::vector<CompiledLayer> compiled = Compile(layers, base.width(), base.height());
+  const std::vector<CompiledLayer> compiled =
+      Compile(layers, masks, base.width(), base.height());
   TImageBuffer<Out> result = TImageBuffer<Out>::Create(base.width(), base.height());
 
   if (compiled.empty()) {
@@ -155,13 +163,15 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
 }
 
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
-                        color::OutputSpace space, const CancellationTokenPtr& token) {
-  return Compose<std::uint8_t>(base, layers, space, token);
+                        const FittedMasks& masks, color::OutputSpace space,
+                        const CancellationTokenPtr& token) {
+  return Compose<std::uint8_t>(base, layers, masks, space, token);
 }
 
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
-                          color::OutputSpace space, const CancellationTokenPtr& token) {
-  return Compose<std::uint16_t>(base, layers, space, token);
+                          const FittedMasks& masks, color::OutputSpace space,
+                          const CancellationTokenPtr& token) {
+  return Compose<std::uint16_t>(base, layers, masks, space, token);
 }
 
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

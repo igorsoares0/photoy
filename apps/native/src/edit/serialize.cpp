@@ -36,7 +36,9 @@ Adjustments AdjustmentsFromJson(const json& value) {
 json MaskToJson(const Mask& mask) {
   return json{{"kind", MaskKindName(mask.kind)}, {"x", mask.x},         {"y", mask.y},
               {"angle", mask.angle},             {"radius", mask.radius},
-              {"feather", mask.feather},         {"invert", mask.invert}};
+              {"feather", mask.feather},         {"invert", mask.invert},
+              {"raster", mask.raster},           {"rasterWidth", mask.raster_width},
+              {"rasterHeight", mask.raster_height}};
 }
 
 Mask MaskFromJson(const json& value) {
@@ -49,6 +51,11 @@ Mask MaskFromJson(const json& value) {
   mask.radius = std::clamp(OptionalFloat(v, "radius", 0.35f), 0.0f, 4.0f);
   mask.feather = std::clamp(OptionalFloat(v, "feather", 0.25f), 0.0f, 4.0f);
   mask.invert = v.value("invert", false);
+  mask.raster = v.contains("raster") && v.at("raster").is_number_unsigned()
+                    ? v.at("raster").get<std::uint64_t>()
+                    : 0;
+  mask.raster_width = OptionalInt(v, "rasterWidth", 0);
+  mask.raster_height = OptionalInt(v, "rasterHeight", 0);
   return mask;
 }
 

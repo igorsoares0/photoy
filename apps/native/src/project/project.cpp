@@ -12,6 +12,7 @@
 #include "core/log.h"
 #include "core/paths.h"
 #include "edit/serialize.h"
+#include "project/mask_image.h"
 
 namespace photoy {
 namespace {
@@ -32,6 +33,8 @@ constexpr const char* kFormatTag = "photoy-project";
 /// Escapes the zip path separator rules: entry names are always forward slashes.
 std::string EntryFor(const std::string& file_name) { return "original/" + file_name; }
 
+std::string MaskEntryFor(std::uint64_t id) { return "masks/" + std::to_string(id) + ".png"; }
+
 }  // namespace
 
 void SaveProject(const Project& project, const std::string& utf8_path) {
@@ -45,6 +48,18 @@ void SaveProject(const Project& project, const std::string& utf8_path) {
             {"byteLength", project.source.bytes.size()}}},
       {"operations", ToJson(project.operations)},
       {"cursor", project.cursor}};
+
+  json masks = json::array();
+  std::vector<std::vector<std::uint8_t>> mask_bytes;
+  mask_bytes.reserve(project.masks.size());
+  for (const auto& [id, buffer] : project.masks) {
+    mask_bytes.push_back(EncodeMaskPng(buffer));
+    masks.push_back(json{{"id", id},
+                         {"entry", MaskEntryFor(id)},
+                         {"width", buffer.width},
+                         {"height", buffer.height}});
+  }
+  manifest["masks"] = std::move(masks);
   const std::string manifest_text = manifest.dump(2);
 
   zip_error_t error;
@@ -82,6 +97,9 @@ void SaveProject(const Project& project, const std::string& utf8_path) {
   add(kManifestEntry, manifest_text.data(), manifest_text.size(), true);
   add(EntryFor(project.source.file_name), project.source.bytes.data(),
       project.source.bytes.size(), false);
+  for (std::size_t i = 0; i < mask_bytes.size(); ++i) {
+    add(MaskEntryFor(project.masks[i].first), mask_bytes[i].data(), mask_bytes[i].size(), false);
+  }
 
   if (zip_close(archive) < 0) {
     const std::string detail = zip_strerror(archive);
@@ -192,6 +210,15 @@ Project LoadProject(const std::string& utf8_path) {
   project.source.origin_path = source.value("originPath", std::string{});
   project.source.bytes =
       read_entry(source.value("entry", EntryFor(project.source.file_name)));
+
+  if (manifest.contains("masks") && manifest.at("masks").is_array()) {
+    for (const json& entry : manifest.at("masks")) {
+      const auto id = entry.value("id", static_cast<std::uint64_t>(0));
+      if (id == 0) continue;
+      project.masks.emplace_back(
+          id, DecodeMaskPng(read_entry(entry.value("entry", MaskEntryFor(id)))));
+    }
+  }
 
   zip_discard(archive);
 

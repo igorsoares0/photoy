@@ -21,6 +21,16 @@ export interface EngineDescription {
   outputSpaces: string[];
   /** Edit operations the stack understands. */
   operations: string[];
+  /** Locally installed models, with the licence each one ships under. */
+  models: Array<{
+    id: string;
+    file: string;
+    license: string;
+    source: string;
+    available: boolean;
+    byteLength: number;
+    loaded: boolean;
+  }>;
   /** How many jobs the engine will run at once. */
   workers: number;
   /** Identifier of the space the engine edits in. */
@@ -48,6 +58,11 @@ export interface EngineMethods {
   'edit.seek': { params: { documentId: string; cursor: number }; result: EditHistory };
   'edit.reset': { params: { documentId: string }; result: EditHistory };
   'edit.history': { params: { documentId: string }; result: EditHistory };
+
+  'ai.segment': {
+    params: { documentId: string };
+    result: { documentId: string; raster: number; width: number; height: number };
+  };
 
   'job.cancel': { params: { jobId: number }; result: { cancelled: boolean } };
 }

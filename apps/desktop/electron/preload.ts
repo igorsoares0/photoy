@@ -7,6 +7,7 @@ import {
   type OpenedProject,
   type PhotoyApi,
   type ProjectState,
+  type SegmentResult,
   type SessionBootstrap,
 } from '@photoy/ipc';
 import type {
@@ -42,6 +43,9 @@ const api: PhotoyApi = {
 
   renderPreview: (request: PreviewRequest) =>
     ipcRenderer.invoke(Channels.imageRenderPreview, request) as Promise<ApiResult<Preview>>,
+
+  segment: (documentId: string) =>
+    ipcRenderer.invoke(Channels.aiSegment, documentId) as Promise<ApiResult<SegmentResult>>,
 
   applyEdit: (documentId: string, operation: Operation, replaceTop = false) =>
     ipcRenderer.invoke(Channels.editApply, documentId, operation, replaceTop) as Promise<

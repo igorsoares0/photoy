@@ -37,6 +37,13 @@ export interface RecoveryOffer {
 }
 
 /** What is open, and whether it has changes the project file does not have. */
+export interface SegmentResult {
+  documentId: string;
+  raster: number;
+  width: number;
+  height: number;
+}
+
 export interface ProjectState {
   /** Path of the .myphoto this document is saved as, or null if never saved. */
   path: string | null;
@@ -76,6 +83,14 @@ export interface PhotoyApi {
    * `replaceTop` overwrites an operation of the same kind already on top, which
    * is what collapses a dragged slider into one undo step instead of forty.
    */
+  /**
+   * Runs segmentation over the document and returns the mask it produced.
+   *
+   * The mask is stored in the engine; what comes back is the identifier and the
+   * document size it was made for.
+   */
+  segment(documentId: string): Promise<ApiResult<SegmentResult>>;
+
   applyEdit(
     documentId: string,
     operation: Operation,

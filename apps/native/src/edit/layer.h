@@ -53,7 +53,7 @@ class CompiledLayer {
  public:
   /// The frame size is needed to compile the mask, which is described in
   /// fractions of the document rather than in pixels.
-  CompiledLayer(const Layer& layer, int width, int height);
+  CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster = nullptr);
 
   /// True when the layer would leave every pixel exactly as it found it.
   bool transparent() const noexcept { return transparent_; }

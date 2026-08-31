@@ -10,6 +10,7 @@
 #include "color/profile.h"
 #include "decoder/decoder.h"
 #include "edit/edit_stack.h"
+#include "edit/mask.h"
 #include "edit/render.h"
 #include "decoder/exif.h"
 #include "image/image_buffer.h"
@@ -70,10 +71,36 @@ struct Document {
   std::shared_ptr<const Image16> CachedBase(const PreviewPlan& plan) const;
   void CacheBase(const PreviewPlan& plan, std::shared_ptr<const Image16> base);
 
+  /**
+   * Generated masks, in document coordinates at the size they were made for.
+   *
+   * Kept beside the document rather than inside the operation list, because
+   * they are pixels: the list stays small enough to be the project file, and
+   * the buffers go into the container's own `masks/` directory.
+   */
+  std::uint64_t StoreMask(MaskBuffer buffer);
+  std::shared_ptr<const MaskBuffer> FindMask(std::uint64_t id) const;
+  /// Restores a mask under a known identifier, as when a project is opened.
+  void RestoreMask(std::uint64_t id, MaskBuffer buffer);
+  std::vector<std::pair<std::uint64_t, std::shared_ptr<const MaskBuffer>>> AllMasks() const;
+
+  /// The same mask resampled to a render's size, kept so a slider does not
+  /// resample it once a frame.
+  std::shared_ptr<const MaskBuffer> CachedFittedMask(const PreviewPlan& plan,
+                                                     std::uint64_t id) const;
+  void CacheFittedMask(const PreviewPlan& plan, std::uint64_t id,
+                       std::shared_ptr<const MaskBuffer> fitted);
+
  private:
   mutable std::mutex base_mutex_;
   PreviewPlan base_plan_;
   std::shared_ptr<const Image16> base_;
+
+  mutable std::mutex masks_mutex_;
+  std::unordered_map<std::uint64_t, std::shared_ptr<const MaskBuffer>> masks_;
+  std::uint64_t next_mask_ = 1;
+  PreviewPlan fitted_plan_;
+  std::unordered_map<std::uint64_t, std::shared_ptr<const MaskBuffer>> fitted_;
 };
 
 /**

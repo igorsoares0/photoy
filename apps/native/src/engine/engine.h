@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ai/model_manager.h"
 #include "engine/document_store.h"
 #include "jobs/job_queue.h"
 #include "protocol/frame.h"
@@ -13,7 +14,7 @@
 namespace photoy {
 
 inline constexpr const char* kEngineName = "photoy-engine";
-inline constexpr const char* kEngineVersion = "0.3.0";
+inline constexpr const char* kEngineVersion = "0.4.0";
 
 /**
  * Dispatches protocol requests onto the image pipeline.
@@ -52,6 +53,12 @@ class Engine {
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);
   protocol::Frame OpenProject(std::int64_t id, const nlohmann::json& params);
   protocol::Frame SaveProjectJob(std::int64_t id, const nlohmann::json& params);
+  protocol::Frame SegmentJob(std::int64_t id, const nlohmann::json& params,
+                             const CancellationTokenPtr& token);
+
+  /// Raster masks the layers refer to, resampled to the render and cached.
+  FittedMasks FitMasks(Document& document, const PreviewPlan& plan,
+                       const std::vector<Layer>& layers) const;
   protocol::Frame RenderPreviewJob(std::int64_t id, const nlohmann::json& params,
                                    const CancellationTokenPtr& token);
   protocol::Frame ExportImage(std::int64_t id, const nlohmann::json& params,
@@ -62,6 +69,7 @@ class Engine {
 
   protocol::StdioTransport& transport_;
   DocumentStore documents_;
+  ai::ModelManager models_;
   JobQueue jobs_;
 };
 

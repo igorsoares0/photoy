@@ -18,6 +18,7 @@ inline constexpr const char* kWriteFailed = "write_failed";
 inline constexpr const char* kDocumentNotFound = "document_not_found";
 inline constexpr const char* kOutOfMemory = "out_of_memory";
 inline constexpr const char* kCancelled = "cancelled";
+inline constexpr const char* kModelUnavailable = "model_unavailable";
 inline constexpr const char* kInternalError = "internal_error";
 }  // namespace error_code
 

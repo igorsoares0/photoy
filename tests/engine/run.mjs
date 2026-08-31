@@ -7,6 +7,7 @@ import { run as runJobs } from './jobs.mjs';
 import { run as runLayers } from './layers.mjs';
 import { run as runProjects } from './project.mjs';
 import { run as runMasks } from './masks.mjs';
+import { run as runAi } from './ai.mjs';
 import { run as runGeometry } from '../renderer/viewport.mjs';
 
 /**
@@ -19,7 +20,7 @@ import { run as runGeometry } from '../renderer/viewport.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runProjects, runJobs, runGeometry]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runProjects, runJobs, runGeometry]) {
   failures += await suite();
 }
 

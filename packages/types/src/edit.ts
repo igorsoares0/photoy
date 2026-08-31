@@ -20,7 +20,7 @@ export type OperationKind =
   | 'setLayerBlend'
   | 'setLayerMask';
 
-export type MaskKind = 'none' | 'linear' | 'radial';
+export type MaskKind = 'none' | 'linear' | 'radial' | 'raster';
 
 /**
  * A parametric mask.
@@ -41,6 +41,16 @@ export interface Mask {
   /** Width of the transition. Zero is a hard edge. */
   feather: number;
   invert: boolean;
+  /** kind 'raster': which stored buffer this refers to. Zero means none. */
+  raster: number;
+  /**
+   * Document size the raster was generated for.
+   *
+   * A crop or a rotation afterwards moves every pixel underneath it, so a mask
+   * whose size no longer matches the document is dropped rather than stretched.
+   */
+  rasterWidth: number;
+  rasterHeight: number;
 }
 
 export const NO_MASK: Mask = {
@@ -51,7 +61,15 @@ export const NO_MASK: Mask = {
   radius: 0.35,
   feather: 0.25,
   invert: false,
+  raster: 0,
+  rasterWidth: 0,
+  rasterHeight: 0,
 };
+
+/** True when a raster mask no longer lines up with the document under it. */
+export function isMaskStale(mask: Mask, width: number, height: number): boolean {
+  return mask.kind === 'raster' && (mask.rasterWidth !== width || mask.rasterHeight !== height);
+}
 
 export type LayerKind = 'background' | 'adjustment';
 

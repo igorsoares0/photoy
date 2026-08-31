@@ -1,8 +1,32 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace photoy {
+
+/**
+ * A painted or generated mask: one continuous 8-bit channel.
+ *
+ * Continuous rather than binary because that is what a segmentation model
+ * actually produces - the spike in `spikes/ai` measured seven per cent of
+ * pixels at intermediate values, which is the soft edge around the subject.
+ * Treating it as a selection would throw exactly that away.
+ */
+struct MaskBuffer {
+  int width = 0;
+  int height = 0;
+  std::vector<std::uint8_t> coverage;
+
+  bool empty() const noexcept { return width <= 0 || height <= 0; }
+  std::uint8_t At(int x, int y) const noexcept {
+    return coverage[static_cast<std::size_t>(y) * width + x];
+  }
+};
+
+/// Bilinear resample of a mask, for fitting one to a preview.
+MaskBuffer Resize(const MaskBuffer& source, int width, int height);
 
 /**
  * How a mask decides where its layer applies.
@@ -12,7 +36,7 @@ namespace photoy {
  * evaluates at whatever resolution the render happens to want. Painted masks
  * are pixels and will need the container's `masks/` directory; these do not.
  */
-enum class MaskKind { kNone, kLinear, kRadial };
+enum class MaskKind { kNone, kLinear, kRadial, kRaster };
 
 const char* MaskKindName(MaskKind kind) noexcept;
 MaskKind MaskKindFromName(const std::string& name) noexcept;
@@ -38,6 +62,18 @@ struct Mask {
   /// Swaps which side the layer applies to.
   bool invert = false;
 
+  /// kRaster: which stored buffer this refers to. Zero means none.
+  std::uint64_t raster = 0;
+  /**
+   * Document size the raster was generated for.
+   *
+   * A crop or a rotation afterwards moves every pixel underneath it, so rather
+   * than stretch the mask into something quietly wrong the engine compares
+   * these and reports the mask as stale.
+   */
+  int raster_width = 0;
+  int raster_height = 0;
+
   bool IsNone() const noexcept { return kind == MaskKind::kNone; }
   bool operator==(const Mask& other) const noexcept;
   bool operator!=(const Mask& other) const noexcept { return !(*this == other); }
@@ -52,7 +88,8 @@ struct Mask {
 class CompiledMask {
  public:
   CompiledMask() = default;
-  CompiledMask(const Mask& mask, int width, int height);
+  /// `raster` may be null; a raster mask without its buffer is simply open.
+  CompiledMask(const Mask& mask, int width, int height, const MaskBuffer* raster = nullptr);
 
   /// True when the mask lets everything through, and can be skipped entirely.
   bool open() const noexcept { return open_; }
@@ -73,6 +110,7 @@ class CompiledMask {
   /// Pixel-to-unit scale on each axis, with the shorter side as the unit.
   float scale_x_ = 0.0f;
   float scale_y_ = 0.0f;
+  const MaskBuffer* raster_ = nullptr;
 };
 
 }  // namespace photoy

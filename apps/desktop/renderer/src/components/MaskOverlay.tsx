@@ -23,7 +23,17 @@ export function MaskOverlay({
   const documentHeight = useEditor((state) => renderedSize(state)?.height ?? 0);
 
   const mask: Mask | undefined = layer?.mask;
-  if (cropping || mask === undefined || mask.kind === 'none' || documentWidth === 0) return null;
+  // A raster mask is shown by the picture itself changing; drawing a boundary
+  // for it would mean tracing a shape the overlay does not have.
+  if (
+    cropping ||
+    mask === undefined ||
+    mask.kind === 'none' ||
+    mask.kind === 'raster' ||
+    documentWidth === 0
+  ) {
+    return null;
+  }
 
   const box = container.current?.getBoundingClientRect();
   if (box === undefined) return null;

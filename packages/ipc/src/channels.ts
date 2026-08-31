@@ -22,6 +22,7 @@ export const Channels = {
   projectState: 'photoy:project.state',
   recoveryTake: 'photoy:recovery.take',
   recoveryDiscard: 'photoy:recovery.discard',
+  aiSegment: 'photoy:ai.segment',
   recentList: 'photoy:recent.list',
   sessionBootstrap: 'photoy:session.bootstrap',
 } as const;

@@ -87,6 +87,9 @@ export const PATCHES = [
 
 export const PATCH_SIZE = 20;
 
+export const SUBJECT_WIDTH = 900;
+export const SUBJECT_HEIGHT = 600;
+
 export const LARGE_WIDTH = 2600;
 export const LARGE_HEIGHT = 1800;
 
@@ -104,6 +107,36 @@ export function generateFixtures() {
   // mask under test and nothing else, and the aspect catches a radial mask that
   // has been stretched into an ellipse.
   writePng('flat.png', 400, 200, () => [128, 128, 128, 255]);
+  // A subject against a background: a head and shoulders in a warm tone over a
+  // cool gradient. Segmentation needs something salient to find, and a flat
+  // field or a gradient gives it nothing.
+  writePng('subject.png', SUBJECT_WIDTH, SUBJECT_HEIGHT, (x, y) => {
+    const fx = x / SUBJECT_WIDTH;
+    const fy = y / SUBJECT_HEIGHT;
+    const glow = Math.exp(-(((fx - 0.8) ** 2 + (fy - 0.18) ** 2) * 22));
+    let r = 0.40 + 0.30 * (1 - fy) + 0.42 * glow;
+    let g = 0.47 + 0.28 * (1 - fy) + 0.40 * glow;
+    let b = 0.62 + 0.22 * (1 - fy) + 0.34 * glow;
+
+    const headR = SUBJECT_HEIGHT * 0.17;
+    const dh = Math.hypot(x - SUBJECT_WIDTH * 0.46, (y - SUBJECT_HEIGHT * 0.33) * 1.1) / headR;
+    const shoulder =
+      (y - SUBJECT_HEIGHT * 0.62) / (SUBJECT_HEIGHT * 0.5) -
+      ((x - SUBJECT_WIDTH * 0.46) / (SUBJECT_WIDTH * 0.4)) ** 2;
+    if (dh < 1 || (shoulder > 0 && y > SUBJECT_HEIGHT * 0.55)) {
+      const shade = dh < 1 ? 0.74 + 0.20 * (1 - Math.min(dh, 1)) : 0.44;
+      r = shade * 0.94;
+      g = shade * 0.66;
+      b = shade * 0.53;
+    }
+    const grain = ((x * 31 + y * 17) % 9) / 500;
+    return [
+      Math.max(0, Math.min(255, Math.round((r + grain) * 255))),
+      Math.max(0, Math.min(255, Math.round((g + grain) * 255))),
+      Math.max(0, Math.min(255, Math.round((b + grain) * 255))),
+      255,
+    ];
+  });
   // Big enough that a render takes long enough to still be queued when the
   // next one arrives, which is what the cancellation tests need.
   writePng('large.png', LARGE_WIDTH, LARGE_HEIGHT, (x, y) => [

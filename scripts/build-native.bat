@@ -42,5 +42,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
+copy /y "%BUILD_DIR%\bin\onnxruntime.dll" "%ENGINE_OUT%\onnxruntime.dll" >nul
+if not exist "%ENGINE_OUT%\models" mkdir "%ENGINE_OUT%\models"
+copy /y "%PHOTOY_ROOT%\.tooling\models\u2netp.onnx" "%ENGINE_OUT%\models\u2netp.onnx" >nul
+
 echo [photoy] engine built: %ENGINE_OUT%\photoy-engine.exe
 exit /b 0

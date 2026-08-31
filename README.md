@@ -4,11 +4,11 @@ Editor de fotos desktop local-first. Especificação completa em
 [`docs/photo-editor-spec-driven-development.md`](docs/photo-editor-spec-driven-development.md);
 o sistema visual em [`docs/style-guide.html`](docs/style-guide.html).
 
-**Estado: Milestone 1 completo, Milestone 2 em 10 de 11, Milestone 3 completo
-exceto máscaras pintadas.** Abrir, decodificar, gerenciar cor, canvas, zoom, pan, girar,
+**Estado: Milestone 1 completo, Milestone 2 em 10 de 11, Milestone 3 completo,
+Milestone 5 começado — seleção de sujeito por IA, ponta a ponta.** Abrir, decodificar, gerenciar cor, canvas, zoom, pan, girar,
 espelhar, recortar com alças e proporções, empilhar camadas de ajuste com
-opacidade, modo de mistura e máscara, desfazer/refazer, **navegar pelo
-histórico**, salvar e reabrir projetos,
+opacidade, modo de mistura e máscara — **inclusive gerada por um modelo local** —,
+desfazer/refazer, navegar pelo histórico, salvar e reabrir projetos,
 recuperar uma sessão interrompida, e exportar.
 
 ## Convenções
@@ -39,7 +39,8 @@ npm run setup
 ```
 
 Faz, em ordem: virtualenv com CMake e Ninja, clone e bootstrap do vcpkg, build dos codecs
-(`libjpeg-turbo`, `libpng`, `libtiff`, `libwebp`, `lcms2`), e `npm install`. A primeira execução leva
+(`libjpeg-turbo`, `libpng`, `libtiff`, `libwebp`, `lcms2`, `libzip`), o ONNX
+Runtime e o modelo de segmentação, e `npm install`. A primeira execução leva
 alguns minutos por causa da compilação dos codecs; as seguintes são quase instantâneas.
 
 ## Uso
@@ -204,6 +205,36 @@ o estado inteiro dos controles, e não um delta — é isso que a torna replayá
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
 
+### Inferência local
+
+O engine carrega e roda modelos ONNX. A primeira operação é a **segmentação**:
+`ai.segment` produz uma máscara de cobertura sobre o sujeito, que vira uma
+máscara raster numa camada — a IA gera camada, como a §15 exige, em vez de
+achatar pixel.
+
+Três coisas que o [espinho](spikes/ai) mediu e que o desenho respeita:
+
+- **O custo não depende do tamanho da foto.** O modelo sempre vê um quadrado
+  pequeno; tudo antes e depois é reamostragem. Uma foto de 50 MP custa o que uma
+  de 5 MP custa. Medido aqui: 421 ms na primeira vez, 276 ms depois.
+- **Memória é a restrição, não velocidade.** Meio giga residente para o modelo
+  pequeno. Nada é carregado por antecipação e a fila de jobs cobra 900 MB por uma
+  inferência, o que impede duas de serem admitidas juntas.
+- **A máscara é alfa contínuo.** Tratá-la como seleção binária jogaria fora
+  exatamente a borda suave em torno do sujeito.
+
+**Licenças são reportadas pelo `engine.describe`** porque são restrição de
+produto. Só entram pesos com licença permissiva: MODNet, RMBG e ISNet são
+não-comerciais e ficaram de fora.
+
+**A seleção é o único preenchimento violeta do produto.** É onde um modelo toca
+a imagem, que é exatamente o que a cor está reservada para significar.
+
+Uma máscara raster guarda o tamanho de documento para o qual foi feita. Um
+recorte depois move cada pixel debaixo dela, então em vez de esticá-la para algo
+silenciosamente errado o engine a **descarta e reporta** — a camada volta a
+aplicar em todo lugar, visivelmente, e a UI pode oferecer refazer.
+
 ### Máscaras
 
 As máscaras de hoje são **descritas, não pintadas**: um gradiente linear ou
@@ -216,8 +247,10 @@ Coordenadas são frações do documento; distâncias usam o **lado mais curto** 
 unidade, que é o que mantém uma máscara radial circular num quadro que não é
 quadrado.
 
-Máscaras pintadas são pixels e vão precisar do diretório `masks/` do container —
-que já existe no formato à espera delas.
+Máscaras geradas são pixels e vivem no diretório `masks/` do container, uma PNG
+em tons de cinza por máscara — em tons de cinza porque é o que uma máscara é, e
+porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
+um enigma.
 
 ### O projeto
 
@@ -276,6 +309,7 @@ apps/native/src/
   edit/       operações, ajustes, camadas, máscaras, pilha com undo/redo/seek,
               avaliação em qualquer resolução
   project/    leitura e escrita do .myphoto
+  ai/         gerenciador de modelos e segmentação
   color/      definição dos espaços, perfis ICC, matriz derivada e conversão rápida
   image/      buffer RGBA8/RGBA16, resample, orientação
   decoder/    sniffer, marcadores JPEG, EXIF, jpeg, png, tiff, webp

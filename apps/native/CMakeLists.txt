@@ -6,6 +6,13 @@ find_package(WebP CONFIG REQUIRED)
 find_package(lcms CONFIG REQUIRED)
 find_package(libzip CONFIG REQUIRED)
 
+# The official prebuilt ONNX Runtime (MIT), fetched by scripts/setup-windows.bat.
+# A source build through vcpkg takes the better part of an hour for no benefit.
+set(PHOTOY_ORT "${CMAKE_SOURCE_DIR}/.tooling/onnxruntime")
+if(NOT EXISTS "${PHOTOY_ORT}/lib/onnxruntime.lib")
+  message(FATAL_ERROR "ONNX Runtime not found at ${PHOTOY_ORT}. Run scripts/setup-windows.bat.")
+endif()
+
 add_executable(photoy-engine
   src/main.cpp
 
@@ -34,6 +41,10 @@ add_executable(photoy-engine
   src/edit/serialize.cpp
 
   src/project/project.cpp
+  src/project/mask_image.cpp
+
+  src/ai/model_manager.cpp
+  src/ai/segmenter.cpp
 
   src/jobs/job_queue.cpp
 
@@ -56,7 +67,7 @@ add_executable(photoy-engine
   src/engine/engine.cpp
 )
 
-target_include_directories(photoy-engine PRIVATE src)
+target_include_directories(photoy-engine PRIVATE src "${PHOTOY_ORT}/include")
 
 target_link_libraries(photoy-engine PRIVATE
   nlohmann_json::nlohmann_json
@@ -68,4 +79,10 @@ target_link_libraries(photoy-engine PRIVATE
   WebP::libwebpmux
   lcms::lcms
   libzip::zip
+  "${PHOTOY_ORT}/lib/onnxruntime.lib"
 )
+
+# The runtime is a DLL; it has to sit beside the engine to be found.
+add_custom_command(TARGET photoy-engine POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${PHOTOY_ORT}/lib/onnxruntime.dll" "$<TARGET_FILE_DIR:photoy-engine>")

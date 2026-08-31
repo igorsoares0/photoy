@@ -14,7 +14,7 @@ import type {
   Operation,
   OutputSpace,
 } from '@photoy/types';
-import { NEUTRAL_ADJUSTMENTS } from '@photoy/types';
+import { NEUTRAL_ADJUSTMENTS, NO_MASK } from '@photoy/types';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
 
@@ -32,7 +32,7 @@ export interface PreviewState {
   scale: number;
 }
 
-export type Busy = 'opening' | 'rendering' | 'exporting' | null;
+export type Busy = 'opening' | 'rendering' | 'exporting' | 'segmenting' | null;
 
 /** What the export dialog collects before a destination is chosen. */
 export interface ExportOptions {
@@ -115,6 +115,8 @@ interface EditorState {
   setLayerOpacity(id: number, opacity: number, continuing: boolean): Promise<void>;
   setLayerBlend(id: number, blend: BlendMode): Promise<void>;
   setLayerMask(id: number, mask: Mask, continuing?: boolean): Promise<void>;
+  /** Runs segmentation and attaches the result to the layer as its mask. */
+  segmentIntoMask(id: number): Promise<void>;
   moveLayer(id: number, delta: number): Promise<void>;
 
   beginCrop(): void;
@@ -532,6 +534,26 @@ export const useEditor = create<EditorState>((set, get) => ({
       get,
       await window.photoy.applyEdit(document.id, { kind: 'setLayerMask', layerId: id, mask }, continuing),
     );
+  },
+
+  segmentIntoMask: async (id) => {
+    const document = get().document;
+    if (document === null) return;
+
+    set({ busy: 'segmenting', error: null });
+    const segmented = await window.photoy.segment(document.id);
+    if (!segmented.ok) {
+      set({ busy: null, error: segmented.error });
+      return;
+    }
+    set({ busy: null });
+    await get().setLayerMask(id, {
+      ...NO_MASK,
+      kind: 'raster',
+      raster: segmented.value.raster,
+      rasterWidth: segmented.value.width,
+      rasterHeight: segmented.value.height,
+    });
   },
 
   moveLayer: async (id, delta) => {

@@ -1,6 +1,13 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
-import { Channels, Events, type ApiResult, type OpenedProject, type ProjectState } from '@photoy/ipc';
+import {
+  Channels,
+  Events,
+  type ApiResult,
+  type OpenedProject,
+  type ProjectState,
+  type SegmentResult,
+} from '@photoy/ipc';
 import type { DocumentInfo, EditHistory, ExportResult, Operation, PreviewInfo } from '@photoy/types';
 import { EngineCallError, type EngineClient } from '../engine/engine-client.js';
 import { PathRejected, resolveReadablePath, resolveWritablePath } from './paths.js';
@@ -247,6 +254,11 @@ export function registerIpcHandlers(
 
   handle(Channels.recoveryDiscard, async () => {
     recovery.clear();
+  });
+
+  handle(Channels.aiSegment, async (documentId: string) => {
+    const { result } = await engine.call<SegmentResult>('ai.segment', { documentId });
+    return result;
   });
 
   handle(Channels.recentList, async () => [] as string[]);

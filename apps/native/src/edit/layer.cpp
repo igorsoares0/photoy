@@ -52,9 +52,9 @@ float Blend(BlendMode mode, float under, float over) noexcept {
   return over;
 }
 
-CompiledLayer::CompiledLayer(const Layer& layer, int width, int height)
+CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster)
     : adjustments_(layer.adjustments),
-      mask_(layer.mask, width, height),
+      mask_(layer.mask, width, height, raster),
       blend_(layer.blend),
       opacity_(std::clamp(layer.opacity, 0.0f, 1.0f)) {
   // With a mask the mix varies per pixel, so the replacement shortcut is off.

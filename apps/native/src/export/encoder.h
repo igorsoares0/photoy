@@ -8,6 +8,7 @@
 #include "decoder/decoder.h"
 #include "decoder/exif.h"
 #include "edit/layer.h"
+#include "edit/render.h"
 #include "image/image_buffer.h"
 #include "jobs/cancellation.h"
 
@@ -54,6 +55,8 @@ struct EncodeOptions {
   color::IccBytes icc;
   /// Composited on the way out, so an export matches what the preview showed.
   std::vector<Layer> layers;
+  /// Raster masks the layers refer to, at full resolution.
+  FittedMasks masks;
 };
 
 std::vector<std::uint8_t> EncodeJpeg(const OutputImage& image, const EncodeOptions& options);

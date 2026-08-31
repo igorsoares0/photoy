@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 
+#include <utility>
+
+#include "edit/mask.h"
 #include "edit/operation.h"
 
 namespace photoy {
@@ -31,6 +34,14 @@ struct Project {
   std::vector<Operation> operations;
   /// How many operations are in effect. Entries past this are redoable.
   std::size_t cursor = 0;
+  /**
+   * Generated masks, by identifier.
+   *
+   * The first thing in a project that is pixels rather than parameters. They go
+   * into the container's own `masks/` directory as greyscale PNGs, which keeps
+   * the manifest small and keeps each mask something a person can look at.
+   */
+  std::vector<std::pair<std::uint64_t, MaskBuffer>> masks;
 };
 
 /// Current on-disk version. Bumped when the layout changes incompatibly.

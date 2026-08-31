@@ -12,6 +12,7 @@
 #include "core/json.h"
 #include "edit/render.h"
 #include "edit/serialize.h"
+#include "ai/segmenter.h"
 #include "project/project.h"
 #include "export/encoder.h"
 
@@ -47,6 +48,20 @@ json DescribeAdjustments(const Adjustments& a) {
               {"temperature", a.temperature}};
 }
 
+json DescribeModels(const ai::ModelManager& models) {
+  json listed = json::array();
+  for (const ai::ModelInfo& model : models.List()) {
+    listed.push_back(json{{"id", model.id},
+                          {"file", model.file_name},
+                          {"license", model.license},
+                          {"source", model.source},
+                          {"available", model.available},
+                          {"byteLength", model.byte_size},
+                          {"loaded", model.loaded}});
+  }
+  return listed;
+}
+
 json DescribeLayer(const Layer& layer) {
   return json{{"id", layer.id},
               {"kind", LayerKindName(layer.kind)},
@@ -62,7 +77,10 @@ json DescribeLayer(const Layer& layer) {
                     {"angle", layer.mask.angle},
                     {"radius", layer.mask.radius},
                     {"feather", layer.mask.feather},
-                    {"invert", layer.mask.invert}}}};
+                    {"invert", layer.mask.invert},
+                    {"raster", layer.mask.raster},
+                    {"rasterWidth", layer.mask.raster_width},
+                    {"rasterHeight", layer.mask.raster_height}}}};
 }
 
 json DescribeOperation(const Operation& operation) {
@@ -164,11 +182,17 @@ std::uint64_t Export(std::uint64_t width, std::uint64_t height) {
 }  // namespace
 
 Engine::Engine(protocol::StdioTransport& transport)
-    : transport_(transport), jobs_(DefaultWorkerCount(), DefaultMemoryBudget()) {}
+    : transport_(transport),
+      models_(ai::DefaultModelDirectory()),
+      jobs_(DefaultWorkerCount(), DefaultMemoryBudget()) {}
 
 Engine::~Engine() { Shutdown(); }
 
-void Engine::Shutdown() { jobs_.Shutdown(); }
+void Engine::Shutdown() {
+  jobs_.Shutdown();
+  // Nothing is held speculatively; the models go as soon as the work does.
+  models_.UnloadAll();
+}
 
 void Engine::EmitJobState(std::int64_t id, const char* state) const {
   protocol::Frame frame;
@@ -207,7 +231,7 @@ void Engine::Dispatch(const nlohmann::json& header) {
 
   const bool known = method == "image.open" || method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
-                     method == "project.save";
+                     method == "project.save" || method == "ai.segment";
   if (!known) {
     return transport_.Write(MakeFailure(id, error_code::kInvalidRequest, "Unknown method", method));
   }
@@ -227,6 +251,8 @@ void Engine::Dispatch(const nlohmann::json& header) {
                        response = OpenProject(id, params);
                      } else if (method == "project.save") {
                        response = SaveProjectJob(id, params);
+                     } else if (method == "ai.segment") {
+                       response = SegmentJob(id, params, token);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -267,6 +293,9 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
       return estimate::Open(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+    if (method == "ai.segment") {
+      return ai::ModelManager::MemoryEstimate("segmentation");
+    }
     if (method == "project.save") {
       // Saving holds the archive and a copy of it in memory at the same time.
       return std::max<std::uint64_t>(64ull * 1024 * 1024, document->source_bytes.size() * 3);
@@ -301,7 +330,8 @@ nlohmann::json Engine::Describe() const {
                             "setLayerOpacity", "setLayerBlend", "setLayerMask"})},
               {"blendModes",
                json::array({"normal", "multiply", "screen", "overlay", "soft-light"})},
-              {"maskKinds", json::array({"none", "linear", "radial"})},
+              {"maskKinds", json::array({"none", "linear", "radial", "raster"})},
+              {"models", DescribeModels(models_)},
               {"workingSpace", "linear-prophoto-16"},
               {"jobs",
                json{{"workers", stats.workers},
@@ -395,6 +425,7 @@ protocol::Frame Engine::OpenProject(std::int64_t id, const json& params) {
   Project project = LoadProject(path);
   const std::shared_ptr<Document> document = documents_.OpenFromMemory(
       std::move(project.source.bytes), project.source.file_name, project.source.origin_path);
+  for (auto& [mask_id, buffer] : project.masks) document->RestoreMask(mask_id, std::move(buffer));
   {
     const std::lock_guard<std::mutex> lock(document->stack_mutex);
     document->stack.Load(std::move(project.operations), project.cursor);
@@ -418,9 +449,63 @@ protocol::Frame Engine::SaveProjectJob(std::int64_t id, const json& params) {
     project.operations = document->stack.All();
     project.cursor = document->stack.cursor();
   }
+  for (const auto& [mask_id, buffer] : document->AllMasks()) {
+    if (buffer != nullptr) project.masks.emplace_back(mask_id, *buffer);
+  }
 
   SaveProject(project, target);
   return MakeSuccess(id, json{{"path", target}, {"byteLength", paths::FileSize(target)}});
+}
+
+FittedMasks Engine::FitMasks(Document& document, const PreviewPlan& plan,
+                             const std::vector<Layer>& layers) const {
+  FittedMasks fitted;
+  for (const Layer& layer : layers) {
+    if (layer.mask.kind != MaskKind::kRaster || layer.mask.raster == 0) continue;
+    // A raster made for a different document size no longer lines up with the
+    // pixels underneath it. Leaving it out is the honest answer; stretching it
+    // would be quietly wrong.
+    if (layer.mask.raster_width != plan.document_width ||
+        layer.mask.raster_height != plan.document_height) {
+      continue;
+    }
+    if (fitted.count(layer.mask.raster) != 0) continue;
+
+    std::shared_ptr<const MaskBuffer> ready =
+        document.CachedFittedMask(plan, layer.mask.raster);
+    if (ready == nullptr) {
+      const std::shared_ptr<const MaskBuffer> full = document.FindMask(layer.mask.raster);
+      if (full == nullptr) continue;
+      ready = std::make_shared<const MaskBuffer>(Resize(*full, plan.width, plan.height));
+      document.CacheFittedMask(plan, layer.mask.raster, ready);
+    }
+    fitted.emplace(layer.mask.raster, std::move(ready));
+  }
+  return fitted;
+}
+
+protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
+                                   const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::vector<Operation> operations = document->ActiveOperations();
+
+  // Segmentation runs on the document as it stands, geometry included, so the
+  // mask lines up with what is on screen rather than with the untouched file.
+  const PreviewPlan plan = PlanPreview(operations, document->source.width(),
+                                       document->source.height(), document->source.width(),
+                                       document->source.height());
+  const Image16 rendered = RenderGeometry(document->source, plan, token);
+
+  const std::shared_ptr<ai::Session> session = models_.Acquire("segmentation");
+  MaskBuffer mask = ai::Segment(rendered, *session, token);
+
+  const std::uint64_t raster = document->StoreMask(std::move(mask));
+  log::Info("segmented " + document->id + " into mask " + std::to_string(raster));
+
+  return MakeSuccess(id, json{{"documentId", document->id},
+                              {"raster", raster},
+                              {"width", plan.document_width},
+                              {"height", plan.document_height}});
 }
 
 protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
@@ -446,8 +531,9 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
     document->CacheBase(plan, base);
   }
 
-  Image8 pixels =
-      ComposeToOutput8(*base, FoldLayers(operations), color::OutputSpace::kSrgb, token);
+  const std::vector<Layer> layers = FoldLayers(operations);
+  Image8 pixels = ComposeToOutput8(*base, layers, FitMasks(*document, plan, layers),
+                                   color::OutputSpace::kSrgb, token);
 
   if (log::Enabled(log::Level::kDebug)) {
     const double elapsed = std::chrono::duration<double, std::milli>(
@@ -493,6 +579,16 @@ protocol::Frame Engine::ExportImage(std::int64_t id, const json& params,
 
   const std::vector<Operation> operations = document->ActiveOperations();
   options.layers = FoldLayers(operations);
+  for (const Layer& layer : options.layers) {
+    if (layer.mask.kind != MaskKind::kRaster || layer.mask.raster == 0) continue;
+    if (layer.mask.raster_width != document->source.width() ||
+        layer.mask.raster_height != document->source.height()) {
+      // An export at full resolution needs the mask at that size; the stored
+      // one is already there when the geometry has not moved since.
+    }
+    const std::shared_ptr<const MaskBuffer> full = document->FindMask(layer.mask.raster);
+    if (full != nullptr) options.masks.emplace(layer.mask.raster, full);
+  }
 
   const auto started = std::chrono::steady_clock::now();
   // Export renders the same stack the preview does, only at full resolution.

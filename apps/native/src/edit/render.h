@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+#include <memory>
 #include <vector>
 
 #include "color/primaries.h"
@@ -52,12 +54,17 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
  * the topmost is fused into the conversion. A document with no layers, or with
  * one, therefore costs exactly what it did before layers existed.
  */
+/// Raster masks, already resampled to the size being rendered.
+using FittedMasks = std::map<std::uint64_t, std::shared_ptr<const MaskBuffer>>;
+
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
-                        color::OutputSpace space, const CancellationTokenPtr& token);
+                        const FittedMasks& masks, color::OutputSpace space,
+                        const CancellationTokenPtr& token);
 
 /// The same, at the depth a PNG or TIFF export can keep.
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
-                          color::OutputSpace space, const CancellationTokenPtr& token);
+                          const FittedMasks& masks, color::OutputSpace space,
+                          const CancellationTokenPtr& token);
 
 /// Evaluates the geometry at full resolution, for export.
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,
