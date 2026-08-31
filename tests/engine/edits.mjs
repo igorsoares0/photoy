@@ -357,6 +357,69 @@ export async function run() {
     assert.ok(states.includes('cancelled'), 'no cancelled event was emitted');
   });
 
+  await suite.check('the comparison view shows the framing without the edits', async () => {
+    // "Before" is the photograph as it is framed now, not the file as it was
+    // decoded: what should move between the two views is the edit being judged,
+    // not the shape of the picture.
+    const { result } = await engine.call('image.open', {
+      path: path.join(fixtures, 'gradient.png'),
+    });
+    const documentId = result.id;
+    await engine.call('edit.apply', {
+      documentId, operation: { kind: 'crop', rect: { x: 0, y: 0, width: 100, height: 60 } },
+    });
+    const plain = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000,
+    });
+
+    await engine.call('edit.apply', {
+      documentId, operation: { kind: 'adjust', adjustments: { saturation: -100, contrast: 60 } },
+    });
+    const edited = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000,
+    });
+    const before = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000, baseline: true,
+    });
+
+    assert.equal(before.result.width, plain.result.width, 'the framing changed');
+    assert.equal(before.result.height, plain.result.height);
+    assert.ok(before.payload.equals(plain.payload), 'the before is not the unedited picture');
+    assert.ok(!before.payload.equals(edited.payload), 'the edit made no difference to compare');
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('the comparison view drops layers as well as sliders', async () => {
+    // Background and object removal are layers, and they are exactly the kind
+    // of edit somebody wants to see undone for a moment.
+    const { result } = await engine.call('image.open', {
+      path: path.join(fixtures, 'flat.png'),
+    });
+    const documentId = result.id;
+    const plain = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000,
+    });
+
+    await engine.call('edit.apply', {
+      documentId, operation: { kind: 'addLayer', layerKind: 'matte', name: 'Fundo' },
+    });
+    const { result: history } = await engine.call('edit.history', { documentId });
+    await engine.call('edit.apply', {
+      documentId,
+      operation: {
+        kind: 'setLayerMask',
+        layerId: history.layers.at(-1).id,
+        mask: { kind: 'radial', x: 0.5, y: 0.5, radius: 0.2, feather: 0.02 },
+      },
+    });
+
+    const before = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000, baseline: true,
+    });
+    assert.ok(before.payload.equals(plain.payload), 'the removal survived into the before');
+    await engine.call('image.close', { documentId });
+  });
+
   engine.close();
   rmSync(workDir, { recursive: true, force: true });
   return suite.report();

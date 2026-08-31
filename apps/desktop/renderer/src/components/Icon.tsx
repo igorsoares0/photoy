@@ -15,6 +15,7 @@ export type IconName =
   | 'subject'
   | 'brush'
   | 'eraser'
+  | 'compare'
   | 'undo'
   | 'redo'
   | 'reset';
@@ -43,6 +44,9 @@ const PATHS: Record<IconName, string[]> = {
   // icon draws that rather than the thing being taken away.
   subject: ['M19 21a7 7 0 0 0-14 0', 'M16 8a4 4 0 1 1-8 0 4 4 0 1 1 8 0'],
   brush: ['m15 4 5 5', 'M9.5 14.5 3 21l2-6 11-11a2.8 2.8 0 0 1 4 4L9 18'],
+  // A frame split down the middle: one half of the picture as it is, the other
+  // as it was.
+  compare: ['M3 4h18v16H3z', 'M12 4v16', 'M7 9h1', 'M7 13h1', 'M16 9h1', 'M16 13h1'],
   eraser: [
     'm7 21-4.3-4.3a2 2 0 0 1 0-2.8l9.6-9.6a2 2 0 0 1 2.8 0l5.6 5.6a2 2 0 0 1 0 2.8L13 21',
     'M22 21H7',

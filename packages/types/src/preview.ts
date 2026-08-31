@@ -11,6 +11,13 @@ export interface PreviewRequest {
   maxWidth: number;
   /** Upper bound for the returned height, in pixels. */
   maxHeight: number;
+  /**
+   * Renders the photograph with its framing but with nothing done to it.
+   *
+   * Framing rather than the raw file, so that what moves between the two views
+   * is the edit being judged and not the shape of the picture.
+   */
+  baseline?: boolean;
 }
 
 /** Metadata describing a preview buffer. The pixels travel out of band. */

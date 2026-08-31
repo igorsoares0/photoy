@@ -697,7 +697,11 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
     document->CacheBase(plan, base);
   }
 
-  const std::vector<Layer> layers = FoldLayers(operations);
+  // The comparison view: the photograph with its framing but nothing done to
+  // it. Framing rather than the raw file, so what moves between the two is the
+  // edit being judged and not the shape of the picture.
+  const std::vector<Layer> layers =
+      params.value("baseline", false) ? std::vector<Layer>{} : FoldLayers(operations);
   Image8 pixels = ComposeToOutput8(*base, layers, FitMasks(*document, plan, layers),
                                    FitPatches(*document, plan, layers), color::OutputSpace::kSrgb,
                                    token, false, plan.scale);

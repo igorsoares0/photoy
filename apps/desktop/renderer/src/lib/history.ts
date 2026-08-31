@@ -93,6 +93,7 @@ export function describeHistory(entries: HistoryEntry[]): HistoryRow[] {
         const key = entry.layerId ?? 0;
         const previous = previousByLayer.get(key) ?? NEUTRAL_ADJUSTMENTS;
         previousByLayer.set(key, entry.adjustments);
+        if (entry.name) return { id, label: 'Predefinição', detail: entry.name };
         return { id, ...describeAdjustment(previous, entry.adjustments) };
       }
       case 'addLayer':

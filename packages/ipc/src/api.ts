@@ -1,4 +1,5 @@
 import type {
+  Preset,
   DocumentInfo,
   EditHistory,
   ExportRequest,
@@ -138,6 +139,18 @@ export interface PhotoyApi {
    * the window they cover.
    */
   inpaint(documentId: string, raster: number): Promise<ApiResult<InpaintResult>>;
+
+  /**
+   * The user's own presets. The ones shipped with the app are a constant in
+   * `@photoy/types`, not rows: they travel with the version that defines them
+   * and cannot be lost or corrupted.
+   */
+  listPresets(): Promise<ApiResult<Preset[]>>;
+  savePreset(preset: Omit<Preset, 'builtIn'>): Promise<ApiResult<Preset[]>>;
+  deletePreset(id: string): Promise<ApiResult<Preset[]>>;
+
+  /** Files opened before, newest first, with the ones that vanished dropped. */
+  listRecent(): Promise<ApiResult<string[]>>;
 
   applyEdit(
     documentId: string,

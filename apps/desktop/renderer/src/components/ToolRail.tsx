@@ -16,6 +16,8 @@ export function ToolRail(): React.JSX.Element {
   const removeBackground = useEditor((state) => state.removeBackground);
   const painting = useEditor((state) => state.brush !== null);
   const beginObjectRemoval = useEditor((state) => state.beginObjectRemoval);
+  const comparing = useEditor((state) => state.comparing);
+  const setComparing = useEditor((state) => state.setComparing);
   const filling = useEditor((state) => state.busy === 'filling');
   const beginBrush = useEditor((state) => state.beginBrush);
   const endBrush = useEditor((state) => state.endBrush);
@@ -34,6 +36,16 @@ export function ToolRail(): React.JSX.Element {
         borderRight: '1px solid var(--border-hairline)',
       }}
     >
+      <IconButton
+        icon="compare"
+        title="Comparar com o original (segure, ou \\)"
+        size={36}
+        selected={comparing}
+        disabled={disabled}
+        onClick={() => undefined}
+        onHold={(down) => void setComparing(down)}
+      />
+      <span style={{ width: 22, height: 1, background: 'var(--border-hairline)', margin: '5px 0' }} />
       <IconButton
         icon="crop"
         title="Recortar"

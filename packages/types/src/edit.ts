@@ -230,6 +230,13 @@ export interface AdjustOperation {
   adjustments: Adjustments;
   /** Omitted targets the topmost adjustment layer, creating one if needed. */
   layerId?: number;
+  /**
+   * Set when a preset produced this.
+   *
+   * The history reads it so that applying a look says which look, rather than
+   * counting how many sliders it happened to move.
+   */
+  name?: string;
 }
 
 export interface AddLayerOperation {

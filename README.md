@@ -262,6 +262,55 @@ em tons de cinza por máscara — em tons de cinza porque é o que uma máscara 
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
 
+### Presets, e o banco que eles pediram
+
+A §25 abre com *"presets devem existir desde o lançamento"*, e a §30 pede SQLite
+para dados estruturados. As duas se resolvem juntas, e a spec já tinha resolvido
+a parte difícil: *"presets devem armazenar parâmetros de edição, não imagens
+renderizadas"* — que é exatamente o que a pilha de edição já é. Um preset é um
+punhado de números, aplicar um é uma operação comum, e o desfazer o desfaz como
+qualquer outra.
+
+**O banco é `node:sqlite`.** O Electron 44 traz o Node 24, que o tem embutido, o
+que evita um módulo nativo que precisaria ser recompilado contra a ABI do
+Electron a cada atualização — a mesma troca que este projeto já tinha feito ao
+escolher um processo separado em vez de um addon. Ele guarda `presets`,
+`recent_files` e `settings`, e nada grande: os pixels continuam no engine e no
+container do projeto.
+
+**Os presets que vêm com o app não são linhas do banco**, são uma constante em
+`@photoy/types`. Assim eles viajam com a versão que os define, não podem ser
+perdidos nem editados até deixarem de corresponder ao próprio nome. Só os do
+usuário vão para o SQLite. Os valores que escrevi são ponto de partida: foram
+raciocinados, não testados em algumas centenas de fotografias, que é o único
+jeito de acertar números desses.
+
+Um `adjust` passou a poder carregar um nome, para o histórico dizer
+"Predefinição · Paisagem" em vez de "Ajustes · 7 controles".
+
+Também matou o stub: **arquivos recentes** era literalmente uma função que
+devolvia lista vazia. Os caminhos são conferidos na saída e não na entrada — um
+arquivo pode ser movido entre uma execução e outra, e oferecer para abrir algo
+que não está mais lá é pior que não oferecer.
+
+### Comparar com o original
+
+A §7 pede comparação antes/depois ao lado de zoom e pan. O "antes" é a fotografia
+**com o enquadramento atual e nada feito a ela** — enquadramento, e não o arquivo
+como foi decodificado, para que o que se move entre as duas vistas seja a edição
+sendo julgada e não o formato da imagem. No engine é uma linha: compor com a
+lista de camadas vazia.
+
+Isso derruba camadas junto com sliders, o que importa: remoção de fundo e de
+objeto são camadas, e são exatamente o tipo de edição que alguém quer ver
+desfeita por um instante.
+
+É **segurar**, não alternar — na barra de ferramentas ou na tecla `\`. Um
+alternador deixaria a tela mostrando uma coisa que não é a foto sem nada dizendo
+isso. O "antes" fica guardado ao lado do preview, então segurar é instantâneo
+depois da primeira vez e soltar é sempre; ele é descartado quando a pilha muda,
+porque aí passou a ser retrato de um antes que não é mais o antes.
+
 ### Os seis ajustes que faltavam
 
 Matiz, vibração, vinheta, grão, nitidez e clareza fecham a lista da §9. Eles se

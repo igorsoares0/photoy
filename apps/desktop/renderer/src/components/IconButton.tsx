@@ -12,6 +12,13 @@ interface IconButtonProps {
   selected?: boolean;
   /** Violet: this button puts a model to work. Reserved for exactly that. */
   accent?: boolean;
+  /**
+   * Held rather than clicked: down turns it on, up or leaving turns it off.
+   *
+   * For the comparison view, where a toggle would leave the picture showing
+   * something that is not the picture and nothing to say so.
+   */
+  onHold?(down: boolean): void;
 }
 
 export function IconButton({
@@ -22,6 +29,7 @@ export function IconButton({
   size = 30,
   selected = false,
   accent = false,
+  onHold,
 }: IconButtonProps): React.JSX.Element {
   return (
     <button
@@ -29,7 +37,10 @@ export function IconButton({
       title={title}
       aria-label={title}
       disabled={disabled}
-      onClick={onClick}
+      onClick={onHold === undefined ? onClick : undefined}
+      onPointerDown={onHold === undefined ? undefined : () => onHold(true)}
+      onPointerUp={onHold === undefined ? undefined : () => onHold(false)}
+      onPointerLeave={onHold === undefined ? undefined : () => onHold(false)}
       className="photoy-icon-button inline-flex items-center justify-center"
       style={{
         width: size,

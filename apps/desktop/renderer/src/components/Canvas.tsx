@@ -25,6 +25,9 @@ export function Canvas(): React.JSX.Element {
   const fitRequest = useEditor((state) => state.fitRequest);
   const fitOnRequest = useEditor((state) => state.fitOnRequest);
   const preview = useEditor((state) => state.preview);
+  const baseline = useEditor((state) => state.baseline);
+  const comparing = useEditor((state) => state.comparing);
+  const setComparing = useEditor((state) => state.setComparing);
   const viewport = useEditor((state) => state.viewport);
   const fitToViewport = useEditor((state) => state.fitToViewport);
   const requestPreview = useEditor((state) => state.requestPreview);
@@ -52,7 +55,11 @@ export function Canvas(): React.JSX.Element {
     context.fillStyle = getComputedStyle(canvas).getPropertyValue('--surface-canvas-matte').trim();
     context.fillRect(0, 0, width, height);
 
-    if (documentWidth === 0 || preview === null) return;
+    // While comparing, the before is drawn in place of the after. It is only
+    // ever shown once it has arrived: showing an empty canvas for the fraction
+    // of a second it takes would read as the picture flickering.
+    const shown = comparing && baseline !== null ? baseline : preview;
+    if (documentWidth === 0 || shown === null) return;
 
     const displayWidth = documentWidth * viewport.scale;
     const displayHeight = documentHeight * viewport.scale;
@@ -64,17 +71,17 @@ export function Canvas(): React.JSX.Element {
     // A draft - or any preview below document resolution - is an interpolation
     // already, and drawing it as hard blocks would show a grid that is not the
     // photograph's.
-    const oneToOne = preview.width >= documentWidth;
+    const oneToOne = shown.width >= documentWidth;
     context.imageSmoothingEnabled = !(oneToOne && viewport.scale >= NEAREST_NEIGHBOUR_ABOVE);
     context.imageSmoothingQuality = 'high';
-    context.drawImage(preview.bitmap, left, top, displayWidth, displayHeight);
+    context.drawImage(shown.bitmap, left, top, displayWidth, displayHeight);
 
     // The photo gets a 1px hairline, never a shadow or a fake paper frame.
     context.imageSmoothingEnabled = false;
     context.strokeStyle = getComputedStyle(canvas).getPropertyValue('--border-hairline').trim();
     context.lineWidth = 1;
     context.strokeRect(left - 0.5, top - 0.5, displayWidth + 1, displayHeight + 1);
-  }, [documentWidth, documentHeight, preview, viewport]);
+  }, [documentWidth, documentHeight, preview, baseline, comparing, viewport]);
 
   useEffect(() => {
     draw();
@@ -177,6 +184,29 @@ export function Canvas(): React.JSX.Element {
   useEffect(() => {
     schedulePreview();
   }, [viewport.scale, schedulePreview]);
+
+  // Held rather than toggled, and released on blur as well: a key that is still
+  // down when the window loses focus never reports coming back up.
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      if (event.key !== '\\' || event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      if (target !== null && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      void setComparing(true);
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.key === '\\') void setComparing(false);
+    };
+    const blur = () => void setComparing(false);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
+    };
+  }, [setComparing]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {

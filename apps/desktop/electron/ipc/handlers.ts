@@ -9,7 +9,17 @@ import {
   type InpaintResult,
   type SegmentResult,
 } from '@photoy/ipc';
-import type { DocumentInfo, EditHistory, ExportResult, Operation, PreviewInfo } from '@photoy/types';
+import { Database } from '../store/database';
+import type {
+  DocumentInfo,
+  EditHistory,
+  ExportResult,
+  Operation,
+  Preset,
+  PreviewInfo,
+  PreviewRequest,
+} from '@photoy/types';
+import { existsSync } from 'node:fs';
 import { EngineCallError, type EngineClient } from '../engine/engine-client.js';
 import { PathRejected, resolveReadablePath, resolveWritablePath } from './paths.js';
 import type { Recovery, Session } from './session.js';
@@ -52,6 +62,7 @@ export function registerIpcHandlers(
   engine: EngineClient,
   session: Session,
   recovery: Recovery,
+  database: Database,
 ): void {
   const announce = () => {
     const window = BrowserWindow.getAllWindows()[0];
@@ -109,6 +120,7 @@ export function registerIpcHandlers(
     // A photograph opened directly is not yet a project: it has no path to save
     // back to, and the first save has to ask for one.
     session.open(result.id, result.image.fileName, null);
+    database.rememberFile(filePath);
     announce();
     return result;
   });
@@ -117,6 +129,7 @@ export function registerIpcHandlers(
     const filePath = resolveReadablePath(candidate);
     const { result } = await engine.call<DocumentInfo>('image.open', { path: filePath });
     session.open(result.id, result.image.fileName, null);
+    database.rememberFile(filePath);
     announce();
     return result;
   });
@@ -130,13 +143,15 @@ export function registerIpcHandlers(
     return result;
   });
 
-  handle(Channels.imageRenderPreview, async (request: { documentId: string; maxWidth: number; maxHeight: number }) => {
+  handle(Channels.imageRenderPreview, async (request: PreviewRequest) => {
     // One key per document, so a burst of viewport changes collapses to the
     // last render instead of queueing every intermediate one.
     const { result, payload } = await engine.call<PreviewInfo>(
       'image.renderPreview',
       request,
-      `preview:${request.documentId}`,
+      // The comparison view has a key of its own: it must not cancel the live
+      // preview, nor be cancelled by it, because the two are shown together.
+      `preview:${request.baseline === true ? 'baseline:' : ''}${request.documentId}`,
     );
     // The Buffer is transferred to the renderer as its own ArrayBuffer; slicing
     // the underlying pool would otherwise leak unrelated bytes across the bridge.
@@ -290,7 +305,30 @@ export function registerIpcHandlers(
     return result;
   });
 
-  handle(Channels.recentList, async () => [] as string[]);
+  // Paths are checked as they go out rather than as they come in: a file can
+  // be moved or deleted between one run and the next, and offering to open
+  // something that is no longer there is worse than not offering it.
+  handle(Channels.recentList, async () => {
+    const remembered = database.recentFiles();
+    const alive: string[] = [];
+    for (const candidate of remembered) {
+      if (existsSync(candidate)) alive.push(candidate);
+      else database.forgetFile(candidate);
+    }
+    return alive;
+  });
+
+  handle(Channels.presetList, async () => database.listPresets());
+
+  handle(Channels.presetSave, async (preset: Omit<Preset, 'builtIn'>) => {
+    database.savePreset(preset);
+    return database.listPresets();
+  });
+
+  handle(Channels.presetDelete, async (id: string) => {
+    database.deletePreset(id);
+    return database.listPresets();
+  });
 }
 
 /** Suggests an export name derived from the source file. */

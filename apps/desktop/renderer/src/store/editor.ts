@@ -17,6 +17,7 @@ import type {
   OutputSpace,
 } from '@photoy/types';
 import { NEUTRAL_ADJUSTMENTS, NO_MASK, SEGMENTED_LEVELS } from '@photoy/types';
+import type { Preset, PresetCategory } from '@photoy/types';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
 
@@ -138,6 +139,19 @@ interface EditorState {
   ): Promise<void>;
   requestPreview(targetWidth: number, targetHeight: number): Promise<void>;
 
+  /**
+   * The comparison view: the photograph framed as it is now, with nothing done
+   * to it.
+   *
+   * Kept beside the live preview rather than swapped into it, so that holding
+   * the control is instant after the first time and releasing it is instant
+   * always. It is dropped whenever the stack changes, because then it is a
+   * picture of something that is no longer the before.
+   */
+  comparing: boolean;
+  baseline: PreviewState | null;
+  setComparing(on: boolean): Promise<void>;
+
   applyEdit(operation: Operation): Promise<void>;
 
   /** Reads the stack from the engine, so the panel knows it before any edit. */
@@ -176,6 +190,13 @@ interface EditorState {
    * first, which is what makes the gesture a single undo step.
    */
   setAdjustment(key: AdjustmentKey, value: number, continuing: boolean): Promise<void>;
+
+  /** The user's own presets. The built-in ones are a constant, not state. */
+  presets: Preset[];
+  loadPresets(): Promise<void>;
+  applyPreset(preset: Preset): Promise<void>;
+  savePreset(name: string, category: PresetCategory): Promise<void>;
+  deletePreset(id: string): Promise<void>;
   resetAdjustments(): Promise<void>;
   undo(): Promise<void>;
   redo(): Promise<void>;
@@ -229,8 +250,12 @@ async function adoptHistory(
   const resized = previous === null || previous.width !== history.width ||
     previous.height !== history.height;
 
+  get().baseline?.bitmap.close();
   set({
     history,
+    // A comparison of the picture against a stack that has since changed would
+    // be a comparison against nothing in particular.
+    baseline: null,
     // Held for the canvas: mid-gesture it renders a draft, and the frame that
     // ends the gesture is the one that gets rendered in full.
     interacting: continuing,
@@ -323,6 +348,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   fitOnRequest: false,
   interacting: false,
   brush: null,
+  presets: [],
+  comparing: false,
+  baseline: null,
 
   setEngineState: (engineState) => set({ engineState }),
 
@@ -385,6 +413,39 @@ export const useEditor = create<EditorState>((set, get) => ({
       lastExport: null,
     });
     await window.photoy.closeImage(current.id);
+  },
+
+  setComparing: async (on) => {
+    set({ comparing: on });
+    if (!on) return;
+
+    const document = get().document;
+    const preview = get().preview;
+    if (document === null || preview === null || get().baseline !== null) return;
+
+    const response = await window.photoy.renderPreview({
+      documentId: document.id,
+      maxWidth: preview.width,
+      maxHeight: preview.height,
+      baseline: true,
+    });
+    if (!response.ok) return;
+    const bitmap = await toBitmap(response.value);
+    // The document may have been closed, or the comparison let go, in the
+    // meantime; a bitmap nobody will draw has to be released rather than kept.
+    if (get().document?.id !== document.id) {
+      bitmap.close();
+      return;
+    }
+    get().baseline?.bitmap.close();
+    set({
+      baseline: {
+        bitmap,
+        width: response.value.width,
+        height: response.value.height,
+        scale: response.value.scale,
+      },
+    });
   },
 
   requestPreview: async (targetWidth, targetHeight) => {
@@ -797,6 +858,48 @@ export const useEditor = create<EditorState>((set, get) => ({
       get,
       await window.photoy.applyEdit(document.id, { kind: 'crop', rect: cropRect }),
     );
+  },
+
+  loadPresets: async () => {
+    const listed = await window.photoy.listPresets();
+    if (listed.ok) set({ presets: listed.value });
+  },
+
+  applyPreset: async (preset) => {
+    const document = get().document;
+    if (document === null) return;
+    const layerId = get().selectedLayerId ?? undefined;
+    set({ pendingAdjustments: preset.adjustments });
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'adjust',
+        adjustments: preset.adjustments,
+        name: preset.name,
+        ...(layerId === undefined ? {} : { layerId }),
+      }),
+    );
+  },
+
+  savePreset: async (name, category) => {
+    const trimmed = name.trim();
+    if (trimmed === '') return;
+    const saved = await window.photoy.savePreset({
+      // Time plus a random tail: two presets saved in the same millisecond are
+      // unlikely, and a collision would silently overwrite the earlier one.
+      id: `user.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmed,
+      category,
+      adjustments: currentAdjustments(get()),
+    });
+    if (saved.ok) set({ presets: saved.value });
+    else set({ error: saved.error });
+  },
+
+  deletePreset: async (id) => {
+    const removed = await window.photoy.deletePreset(id);
+    if (removed.ok) set({ presets: removed.value });
   },
 
   setAdjustment: async (key, value, continuing) => {

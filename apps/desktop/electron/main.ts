@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Channels, Events } from '@photoy/ipc';
 import { EngineClient } from './engine/engine-client.js';
 import { locateEngine } from './engine/locate.js';
+import { Database } from './store/database';
 import { registerIpcHandlers } from './ipc/handlers.js';
 import { Recovery, Session } from './ipc/session.js';
 import { resolveReadablePath } from './ipc/paths.js';
@@ -23,6 +24,7 @@ let pendingOpenPath: string | null = null;
 
 const openSession = new Session();
 let recovery: Recovery | null = null;
+let database: Database | null = null;
 let autosaveTimer: NodeJS.Timeout | null = null;
 
 /**
@@ -113,7 +115,8 @@ if (!app.requestSingleInstanceLock()) {
     // run, and this run's first autosave would replace it.
     const offer = recovery.offer();
 
-    registerIpcHandlers(engine, openSession, recovery);
+    database = new Database(app.getPath('userData'));
+    registerIpcHandlers(engine, openSession, recovery, database);
 
     const worker = engine;
     autosaveTimer = setInterval(() => void autosave(worker), autosaveIntervalMs());
@@ -165,6 +168,10 @@ if (!app.requestSingleInstanceLock()) {
     // the user's choice to leave unsaved, and offering it back next time would
     // be the application second-guessing them.
     recovery?.clear();
+    // Closed rather than left to the process exit, so the write-ahead log is
+    // checkpointed into the database instead of being replayed on next start.
+    database?.close();
+    database = null;
     void engine?.stop();
   });
 }

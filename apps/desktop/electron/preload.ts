@@ -13,6 +13,7 @@ import {
   type StoredMask,
 } from '@photoy/ipc';
 import type {
+  Preset,
   DocumentInfo,
   EditHistory,
   ExportRequest,
@@ -56,6 +57,12 @@ const api: PhotoyApi = {
     ipcRenderer.invoke(Channels.maskFetch, documentId, raster) as Promise<ApiResult<StoredMask>>,
   inpaint: (documentId: string, raster: number) =>
     ipcRenderer.invoke(Channels.aiInpaint, documentId, raster) as Promise<ApiResult<InpaintResult>>,
+  listPresets: () => ipcRenderer.invoke(Channels.presetList) as Promise<ApiResult<Preset[]>>,
+  savePreset: (preset: Omit<Preset, 'builtIn'>) =>
+    ipcRenderer.invoke(Channels.presetSave, preset) as Promise<ApiResult<Preset[]>>,
+  deletePreset: (id: string) =>
+    ipcRenderer.invoke(Channels.presetDelete, id) as Promise<ApiResult<Preset[]>>,
+  listRecent: () => ipcRenderer.invoke(Channels.recentList) as Promise<ApiResult<string[]>>,
 
   applyEdit: (documentId: string, operation: Operation, replaceTop = false) =>
     ipcRenderer.invoke(Channels.editApply, documentId, operation, replaceTop) as Promise<

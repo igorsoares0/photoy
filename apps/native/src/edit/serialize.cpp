@@ -106,6 +106,9 @@ json ToJson(const Operation& operation) {
     case OperationKind::kAdjust:
       entry["adjustments"] = AdjustmentsToJson(operation.adjustments);
       entry["layerId"] = operation.target_layer;
+      // Carried so the history can say which preset did this rather than
+      // counting how many sliders it happened to move.
+      if (!operation.name.empty()) entry["name"] = operation.name;
       break;
     case OperationKind::kAddLayer:
       entry["name"] = operation.name;
@@ -203,6 +206,7 @@ Operation FromJson(const json& value) {
     operation.target_layer = LayerId(value);
     operation.adjustments =
         AdjustmentsFromJson(value.contains("adjustments") ? value.at("adjustments") : json::object());
+    operation.name = value.value("name", std::string{});
     return operation;
   }
   if (kind == "addLayer") {
