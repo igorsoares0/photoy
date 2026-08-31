@@ -107,6 +107,18 @@ export function describeHistory(entries: HistoryEntry[]): HistoryRow[] {
         return { id, label: 'Mistura', detail: entry.blend ?? 'normal' };
       case 'setLayerMask':
         return { id, label: MASK_LABELS[entry.mask?.kind ?? 'none'] ?? 'Máscara', detail: null };
+      case 'setLayerFill':
+        return {
+          id,
+          label: 'Fundo',
+          detail: entry.fill === 'color' ? 'cor' : 'transparente',
+        };
+      case 'setLayerDecontaminate':
+        return {
+          id,
+          label: 'Descontaminar',
+          detail: `${formatInteger((entry.decontaminate ?? 1) * 100)} %`,
+        };
       default:
         return { id, label: 'Edição', detail: null };
     }

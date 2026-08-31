@@ -179,8 +179,12 @@ hoje:
   ao soltar é o próximo ganho fácil, e a API já aceita isso sem mudança.
 - **O fundo só vira transparente ou cor.** Preencher com uma imagem ou com um desfoque
   da própria foto (§19) ainda não existe; a camada matte já tem onde guardar a escolha.
-- **A qualidade da segmentação não foi medida.** Todo teste usa um sujeito sintético, onde
-  o modelo acerta a cabeça e erra os ombros. Julgar isso pede fotografias de verdade.
+- **A calibração dos níveis vem de uma única fotografia.** `SEGMENTED_LEVELS` foi medido
+  num retrato real, o que é uma a mais que os fixtures sintéticos oferecem e muito menos do
+  que a escolha merece. O ponto branco em particular é juízo, não medição.
+- **A borda continua sendo contorno, não fios.** Os níveis e a descontaminação arrumam a
+  cor e a extensão do halo, mas nenhum dos dois recupera fio de cabelo: para isso é preciso
+  matting de verdade, que olha a fotografia e não só a máscara.
 - **Faltam os ajustes que a §9 lista além destes**: matiz, vibração, nitidez, clareza,
   vinheta e grão. E `resize`, o único item do M2 ainda em aberto.
 - **Jobs reportam estado, não porcentagem.** `queued → running → completed/cancelled/failed`
@@ -279,6 +283,48 @@ não o fundo original.
 
 O preenchimento por cor é escolhido em sRGB, na UI, e convertido para o espaço de
 trabalho **uma vez**, quando a camada é compilada — não por pixel.
+
+#### O mapa de saliência não é uma seleção
+
+A primeira versão entregava a saída do U²-Net crua como alfa, e numa fotografia
+de verdade isso produziu duas falhas visíveis: uma faixa diagonal de fundo que
+sobrou flutuando no quadro, e um halo pálido em volta do cabelo. Medindo a
+máscara, as duas têm a mesma causa. A faixa tem alfa **médio 8 e máximo 73**, de
+255 — o modelo nunca acreditou nela, e nós é que a estávamos exibindo. O halo é a
+outra ponta: uma faixa larga de alfa baixo mantendo pixels do prédio
+parcialmente opacos.
+
+Daí os dois controles, ambos em `Mask`:
+
+**Níveis (`low`, `high`)** são o ponto preto e o ponto branco da *confiança* do
+modelo. Com corte em 0,25 a faixa cai para 1 % da sua área enquanto o cabelo
+mantém 30 % — quer dizer, custa só os fios mais fantasmagóricos. Uma máscara
+recém-segmentada nasce em `SEGMENTED_LEVELS`, não em identidade, porque
+identidade é o que estava medidamente errado. São sliders: um sujeito que é
+mesmo macio recupera a faixa inteira.
+
+**Descontaminação (`Layer::decontaminate`)** resolve o que sobra, que não é alfa
+e sim *cor*. Num contorno suave o pixel é uma mistura, `C = F·α + B·(1-α)`;
+compor essa mistura sobre o fundo novo carrega o fundo velho junto. Resolver
+para `F` desfaz isso, e precisa saber quem era `B` — daí `edit/decontaminate.cpp`,
+que estima o fundo numa grade de 192 células a partir dos pixels que a máscara
+chama de fundo e espalha esse valor para dentro. A grade é grosseira de
+propósito: o fundo perto de uma borda varia devagar, e uma grade grosseira não
+tem como inventar detalhe próprio.
+
+Medido no retrato de teste: dos 201.254 pixels totalmente cobertos, **a maior
+mudança foi 0** — a descontaminação não toca a fotografia onde ela está inteira.
+Dos 4.873 pixels de borda, 97 % mudaram, e a luminância média caiu de 136,6 para
+118,1: é o bege do prédio saindo do cabelo.
+
+O custo é proporcional à largura da borda, não ao tamanho da imagem. Num export
+de 4,7 MP com borda fina a descontaminação não aparece na medição; com uma borda
+artificialmente larga (uma radial de 20 % de suavização) ela custa ~240 ms, todo
+ele no unmix por pixel. A estimativa do fundo em si custava 35 ms até passar a
+amostrar com passo em vez de ler todo pixel — a grade tem 192 células, ler
+milhões de pixels para preenchê-la era desperdício. Vale registrar que otimizei o
+passo errado primeiro: só medindo com borda fina e com borda larga separadamente
+é que ficou claro onde o tempo estava.
 
 ### O projeto
 

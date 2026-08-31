@@ -62,6 +62,19 @@ struct Mask {
   /// Swaps which side the layer applies to.
   bool invert = false;
 
+  /**
+   * Levels on the coverage: below `low` nothing, above `high` everything.
+   *
+   * A segmentation model does not return a selection, it returns confidence,
+   * and shipping that confidence raw is what puts a halo around hair and leaves
+   * faint ghosts of the background floating in the frame. These two numbers are
+   * the black point and the white point of that confidence, so raising `low`
+   * discards what the model was never sure of and lowering `high` firms up what
+   * it was. Identity is 0 and 1, which is what every other mask kind wants.
+   */
+  float low = 0.0f;
+  float high = 1.0f;
+
   /// kRaster: which stored buffer this refers to. Zero means none.
   std::uint64_t raster = 0;
   /**
@@ -110,6 +123,10 @@ class CompiledMask {
   /// Pixel-to-unit scale on each axis, with the shorter side as the unit.
   float scale_x_ = 0.0f;
   float scale_y_ = 0.0f;
+  /// Precomputed levels: coverage becomes (coverage - low_) * levels_scale_.
+  bool levelled_ = false;
+  float low_ = 0.0f;
+  float levels_scale_ = 1.0f;
   const MaskBuffer* raster_ = nullptr;
 };
 

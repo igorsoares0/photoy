@@ -37,6 +37,7 @@ json MaskToJson(const Mask& mask) {
   return json{{"kind", MaskKindName(mask.kind)}, {"x", mask.x},         {"y", mask.y},
               {"angle", mask.angle},             {"radius", mask.radius},
               {"feather", mask.feather},         {"invert", mask.invert},
+              {"low", mask.low},                 {"high", mask.high},
               {"raster", mask.raster},           {"rasterWidth", mask.raster_width},
               {"rasterHeight", mask.raster_height}};
 }
@@ -51,6 +52,8 @@ Mask MaskFromJson(const json& value) {
   mask.radius = std::clamp(OptionalFloat(v, "radius", 0.35f), 0.0f, 4.0f);
   mask.feather = std::clamp(OptionalFloat(v, "feather", 0.25f), 0.0f, 4.0f);
   mask.invert = v.value("invert", false);
+  mask.low = std::clamp(OptionalFloat(v, "low", 0.0f), 0.0f, 1.0f);
+  mask.high = std::clamp(OptionalFloat(v, "high", 1.0f), 0.0f, 1.0f);
   mask.raster = v.contains("raster") && v.at("raster").is_number_unsigned()
                     ? v.at("raster").get<std::uint64_t>()
                     : 0;
@@ -115,6 +118,10 @@ json ToJson(const Operation& operation) {
       entry["fill"] = FillKindName(operation.fill);
       entry["color"] = json{{"r", operation.color.r}, {"g", operation.color.g},
                             {"b", operation.color.b}};
+      break;
+    case OperationKind::kSetLayerDecontaminate:
+      entry["layerId"] = operation.target_layer;
+      entry["decontaminate"] = operation.amount;
       break;
     case OperationKind::kFlipHorizontal:
     case OperationKind::kFlipVertical:
@@ -184,6 +191,12 @@ Operation FromJson(const json& value) {
     operation.color.r = std::clamp(OptionalFloat(c, "r", 1.0f), 0.0f, 1.0f);
     operation.color.g = std::clamp(OptionalFloat(c, "g", 1.0f), 0.0f, 1.0f);
     operation.color.b = std::clamp(OptionalFloat(c, "b", 1.0f), 0.0f, 1.0f);
+    return operation;
+  }
+  if (kind == "setLayerDecontaminate") {
+    operation.kind = OperationKind::kSetLayerDecontaminate;
+    operation.target_layer = LayerId(value);
+    operation.amount = std::clamp(OptionalFloat(value, "decontaminate", 1.0f), 0.0f, 1.0f);
     return operation;
   }
   if (kind == "removeLayer") {

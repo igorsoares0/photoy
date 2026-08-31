@@ -64,7 +64,7 @@ MaskKind MaskKindFromName(const std::string& name) noexcept {
 bool Mask::operator==(const Mask& other) const noexcept {
   return kind == other.kind && x == other.x && y == other.y && angle == other.angle &&
          radius == other.radius && feather == other.feather && invert == other.invert &&
-         raster == other.raster;
+         low == other.low && high == other.high && raster == other.raster;
 }
 
 CompiledMask::CompiledMask(const Mask& mask, int width, int height, const MaskBuffer* raster)
@@ -90,6 +90,15 @@ CompiledMask::CompiledMask(const Mask& mask, int width, int height, const MaskBu
 
   direction_x_ = std::sin(mask.angle);
   direction_y_ = std::cos(mask.angle);
+
+  low_ = std::clamp(mask.low, 0.0f, 1.0f);
+  const float high = std::clamp(mask.high, 0.0f, 1.0f);
+  levelled_ = low_ > 0.0f || high < 1.0f;
+  // A white point at or below the black point is a hard threshold. The slope
+  // is steep but finite, because an infinite one turns the pixel that sits
+  // exactly on the black point into 0 * inf, which is a NaN.
+  constexpr float kStep = 1.0e6f;
+  levels_scale_ = high > low_ ? 1.0f / (high - low_) : kStep;
 }
 
 float CompiledMask::At(int x, int y) const noexcept {
@@ -114,6 +123,10 @@ float CompiledMask::At(int x, int y) const noexcept {
     const float distance = std::sqrt(dx * dx + dy * dy);
     // Full inside the radius, falling away across the feather.
     coverage = 1.0f - SmoothStep(radius_, radius_ + feather_, distance);
+  }
+  // Levels shape what the mask claims before invert flips which side it means.
+  if (levelled_) {
+    coverage = std::clamp((coverage - low_) * levels_scale_, 0.0f, 1.0f);
   }
   return invert_ ? 1.0f - coverage : coverage;
 }

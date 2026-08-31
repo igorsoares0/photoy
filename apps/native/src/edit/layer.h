@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "edit/adjustments.h"
+#include "edit/decontaminate.h"
 #include "edit/mask.h"
 
 namespace photoy {
@@ -60,6 +61,17 @@ struct Layer {
    */
   FillKind fill = FillKind::kTransparent;
   FillColor color;
+  /**
+   * kMatte: how much of the old background's colour to take back out, 0 to 1.
+   *
+   * A soft edge is a mixture of subject and background, and compositing the
+   * mixture unchanged carries the old background into the new one - the pale
+   * rim around cut-out hair. Undoing the mixture is arithmetic, not a model,
+   * but it divides by the coverage, so it is a dial rather than a switch: on a
+   * very soft edge the division amplifies noise, and backing it off is the
+   * honest remedy.
+   */
+  float decontaminate = 1.0f;
   /// Shown in the layers panel. Empty means the UI names it by kind.
   std::string name;
 };
@@ -82,6 +94,18 @@ class CompiledLayer {
   /// True when the layer would leave every pixel exactly as it found it.
   bool transparent() const noexcept { return transparent_; }
 
+  /// The mask this compiled against, so a caller can measure the frame with it.
+  const CompiledMask& mask() const noexcept { return mask_; }
+
+  /// True when Apply wants a background estimate it has not been given yet.
+  bool wants_background() const noexcept {
+    return kind_ == LayerKind::kMatte && !transparent_ && decontaminate_ > 0.0f &&
+           background_ == nullptr;
+  }
+  void SetBackground(BackgroundEstimatePtr background) noexcept {
+    background_ = std::move(background);
+  }
+
   void Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept;
 
  private:
@@ -93,6 +117,8 @@ class CompiledLayer {
   CompiledMask mask_;
   BlendMode blend_ = BlendMode::kNormal;
   float opacity_ = 1.0f;
+  float decontaminate_ = 0.0f;
+  BackgroundEstimatePtr background_;
   bool transparent_ = false;
   /// True when the mix is a plain replacement, which skips the blend entirely.
   bool passthrough_ = true;

@@ -15,6 +15,11 @@ float DecodeSrgb(float encoded) noexcept {
   return std::pow((encoded + 0.055f) / 1.055f, 2.4f);
 }
 
+/// Below this coverage a pixel is too nearly background to unmix usefully.
+constexpr float kUnmixFloor = 0.1f;
+/// Headroom the solved colour is allowed, in linear working-space units.
+constexpr float kUnmixCeiling = 4.0f;
+
 float SoftLight(float under, float over) noexcept {
   // The W3C formulation, which is the one that matches what other editors call
   // soft light.
@@ -85,6 +90,7 @@ CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const Ma
     // A matte with nothing to mask covers the whole frame, which leaves it
     // exactly as it found it.
     transparent_ = opacity_ <= 0.0f || mask_.open();
+    decontaminate_ = std::clamp(layer.decontaminate, 0.0f, 1.0f);
     if (fill_ == FillKind::kColor) {
       // The picked colour is sRGB; the composite is linear working space. The
       // conversion happens once here rather than once per pixel.
@@ -114,6 +120,28 @@ void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) 
     // The mask marks what stays. Everything else is what the fill replaces.
     const float keep = opacity_ < 1.0f ? 1.0f - opacity_ * (1.0f - mask_.At(x, y))
                                        : mask_.At(x, y);
+
+    // Along a soft edge the pixel is a mixture: C = F*keep + B*(1 - keep).
+    // Solving that for F is what stops the old background travelling into the
+    // new one. Only the partly-covered pixels are mixtures, and below a tenth
+    // of coverage the division is dominated by whatever B got wrong, so those
+    // are left alone - they are barely visible in the result either way.
+    if (background_ != nullptr && keep > kUnmixFloor && keep < 1.0f) {
+      float behind[3];
+      background_->SampleAt(x, y, behind);
+      const float missing = 1.0f - keep;
+      const float inverse = 1.0f / keep;
+      const auto unmix = [&](float channel, float under) {
+        // The working space carries highlights above 1, so the ceiling is
+        // headroom rather than white; the floor is what light cannot go below.
+        const float solved = std::clamp((channel - under * missing) * inverse, 0.0f, kUnmixCeiling);
+        return channel + (solved - channel) * decontaminate_;
+      };
+      r = unmix(r, behind[0]);
+      g = unmix(g, behind[1]);
+      b = unmix(b, behind[2]);
+    }
+
     if (fill_ == FillKind::kTransparent) {
       a *= keep;
       return;

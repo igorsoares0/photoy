@@ -25,6 +25,7 @@ enum class OperationKind {
   kSetLayerBlend,
   kSetLayerMask,
   kSetLayerFill,
+  kSetLayerDecontaminate,
 };
 
 /**
@@ -64,6 +65,7 @@ struct Operation {
   /// kSetLayerFill: what replaces the part a matte removes.
   FillKind fill = FillKind::kTransparent;
   FillColor color;
+  /// kSetLayerDecontaminate also travels in `amount`.
   /// kSetLayerMask: where the layer applies.
   Mask mask;
 

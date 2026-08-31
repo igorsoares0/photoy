@@ -53,6 +53,7 @@ std::string Operation::KindName() const {
     case OperationKind::kSetLayerBlend: return "setLayerBlend";
     case OperationKind::kSetLayerMask: return "setLayerMask";
     case OperationKind::kSetLayerFill: return "setLayerFill";
+    case OperationKind::kSetLayerDecontaminate: return "setLayerDecontaminate";
   }
   return "unknown";
 }
@@ -91,6 +92,7 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
       case OperationKind::kSetLayerBlend:
       case OperationKind::kSetLayerMask:
       case OperationKind::kSetLayerFill:
+      case OperationKind::kSetLayerDecontaminate:
         break;  // colour and compositing only; the shape is untouched
       case OperationKind::kCrop: {
         // The crop is expressed against what the user sees, so it is mapped
@@ -204,6 +206,11 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
           target->fill = operation.fill;
           target->color = operation.color;
         }
+        break;
+      }
+      case OperationKind::kSetLayerDecontaminate: {
+        Layer* target = Resolve(layers, operation.target_layer);
+        if (target != nullptr) target->decontaminate = std::clamp(operation.amount, 0.0f, 1.0f);
         break;
       }
 

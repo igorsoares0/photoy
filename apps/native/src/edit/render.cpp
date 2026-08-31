@@ -4,6 +4,7 @@
 
 #include "color/pipeline.h"
 #include "core/error.h"
+#include "edit/decontaminate.h"
 #include "image/resample.h"
 
 namespace photoy {
@@ -90,8 +91,7 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
   // Masks are described in fractions of the document, so they compile against
   // whatever resolution this render happens to be: the same mask at preview
   // size and at full size, with no downscale in between.
-  const std::vector<CompiledLayer> compiled =
-      Compile(layers, masks, base.width(), base.height());
+  std::vector<CompiledLayer> compiled = Compile(layers, masks, base.width(), base.height());
   TImageBuffer<Out> result = TImageBuffer<Out>::Create(base.width(), base.height());
 
   if (compiled.empty()) {
@@ -107,9 +107,18 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
   if (compiled.size() > 1) {
     scratch = base.Clone();
     for (std::size_t i = 0; i + 1 < compiled.size(); ++i) {
+      // Each estimate is built from the pixels that layer is about to see, not
+      // from the original, so a matte sitting above an adjustment unmixes
+      // against the background as adjusted rather than as decoded.
+      if (compiled[i].wants_background()) {
+        compiled[i].SetBackground(EstimateBackground(scratch, compiled[i].mask()));
+      }
       ApplyInPlace(scratch, compiled[i], token);
     }
     input = &scratch;
+  }
+  if (compiled.back().wants_background()) {
+    compiled.back().SetBackground(EstimateBackground(*input, compiled.back().mask()));
   }
   color::ConvertBanded(*input, result, space, token, LayerStep{compiled.back()}, flatten);
   return result;

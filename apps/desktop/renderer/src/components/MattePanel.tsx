@@ -45,6 +45,7 @@ function colorOf(hex: string): { r: number; g: number; b: number } {
 export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
   const setLayerFill = useEditor((state) => state.setLayerFill);
   const setLayerOpacity = useEditor((state) => state.setLayerOpacity);
+  const setLayerDecontaminate = useEditor((state) => state.setLayerDecontaminate);
   const filled = layer.fill === 'color';
 
   return (
@@ -113,6 +114,24 @@ export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
             </label>
           </div>
         ) : null}
+
+        {/* A soft edge is a mixture of subject and background, so compositing
+            it unchanged carries the old background into the new one. Undoing
+            the mixture divides by the coverage, which amplifies noise on a very
+            soft edge - hence a dial rather than a switch. */}
+        <Slider
+          label="Descontaminar"
+          value={Math.round(layer.decontaminate * 100)}
+          min={0}
+          max={100}
+          display={`${Math.round(layer.decontaminate * 100)} %`}
+          origin={100}
+          idle={layer.decontaminate >= 1}
+          onChange={(next, continuing) =>
+            void setLayerDecontaminate(layer.id, next / 100, continuing)
+          }
+          onReset={() => void setLayerDecontaminate(layer.id, 1, false)}
+        />
 
         <Slider
           label="Intensidade"

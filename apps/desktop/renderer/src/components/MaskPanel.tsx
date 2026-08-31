@@ -111,6 +111,40 @@ export function MaskPanel({ layer }: { layer: Layer }): React.JSX.Element {
         </span>
       ) : null}
 
+      {/* A model returns confidence, not a selection. These two are the black
+          and the white point of that confidence: raising the first throws away
+          what it never believed, lowering the second firms up what it did. */}
+      {mask.kind === 'raster' && !stale ? (
+        <>
+          <Slider
+            label="Corte"
+            value={Math.round(mask.low * 100)}
+            min={0}
+            max={95}
+            display={`${formatInteger(mask.low * 100)} %`}
+            origin={0}
+            idle={mask.low <= 0}
+            onChange={(next, continuing) =>
+              update({ low: Math.min(next, mask.high * 100 - 5) / 100 }, continuing)
+            }
+            onReset={() => update({ low: 0 })}
+          />
+          <Slider
+            label="Sólido"
+            value={Math.round(mask.high * 100)}
+            min={5}
+            max={100}
+            display={`${formatInteger(mask.high * 100)} %`}
+            origin={100}
+            idle={mask.high >= 1}
+            onChange={(next, continuing) =>
+              update({ high: Math.max(next, mask.low * 100 + 5) / 100 }, continuing)
+            }
+            onReset={() => update({ high: 1 })}
+          />
+        </>
+      ) : null}
+
       {mask.kind === 'none' || mask.kind === 'raster' ? null : (
         <>
           {mask.kind === 'radial' ? (

@@ -18,7 +18,9 @@ export type OperationKind =
   | 'setLayerVisible'
   | 'setLayerOpacity'
   | 'setLayerBlend'
-  | 'setLayerMask';
+  | 'setLayerMask'
+  | 'setLayerFill'
+  | 'setLayerDecontaminate';
 
 export type MaskKind = 'none' | 'linear' | 'radial' | 'raster';
 
@@ -41,6 +43,15 @@ export interface Mask {
   /** Width of the transition. Zero is a hard edge. */
   feather: number;
   invert: boolean;
+  /**
+   * Levels on the coverage: below `low` nothing, above `high` everything.
+   *
+   * A segmentation model returns confidence, not a selection. Shipping that
+   * confidence raw is what haloes hair and leaves faint ghosts of the old
+   * background floating in the frame; these two are its black and white points.
+   */
+  low: number;
+  high: number;
   /** kind 'raster': which stored buffer this refers to. Zero means none. */
   raster: number;
   /**
@@ -61,10 +72,28 @@ export const NO_MASK: Mask = {
   radius: 0.35,
   feather: 0.25,
   invert: false,
+  low: 0,
+  high: 1,
   raster: 0,
   rasterWidth: 0,
   rasterHeight: 0,
 };
+
+/**
+ * Levels a freshly segmented mask starts at.
+ *
+ * Not identity, because identity is measurably wrong: on a real photograph the
+ * model left a diagonal smear of background behind, never rising above 29 per
+ * cent confidence, and a broad soft collar around the hair. A black point of
+ * 0.25 is where that smear measured down to one per cent of its area while the
+ * hair kept thirty; the white point is judgement rather than measurement, set
+ * gently because nothing distinguished the candidates. Both are sliders, so a
+ * subject that really is soft can have the range back.
+ *
+ * Calibrated against one photograph, which is one more than the synthetic
+ * fixtures offer and far fewer than this deserves.
+ */
+export const SEGMENTED_LEVELS = { low: 0.25, high: 0.8 } as const;
 
 /** True when a raster mask no longer lines up with the document under it. */
 export function isMaskStale(mask: Mask, width: number, height: number): boolean {
@@ -103,6 +132,8 @@ export interface Layer {
   /** kind 'matte': what replaces the part the mask excludes. */
   fill: FillKind;
   color: FillColor;
+  /** kind 'matte': how much of the old background's colour to unmix, 0 to 1. */
+  decontaminate: number;
   adjustments: Adjustments;
   /** Where the layer applies. `kind: 'none'` means everywhere. */
   mask: Mask;
@@ -175,6 +206,12 @@ export interface AddLayerOperation {
   layerKind?: LayerKind;
 }
 
+export interface SetLayerDecontaminateOperation {
+  kind: 'setLayerDecontaminate';
+  layerId: number;
+  decontaminate: number;
+}
+
 export interface SetLayerFillOperation {
   kind: 'setLayerFill';
   layerId: number;
@@ -206,6 +243,7 @@ export type Operation =
   | AdjustOperation
   | AddLayerOperation
   | SetLayerFillOperation
+  | SetLayerDecontaminateOperation
   | LayerOperation;
 
 /** An operation as it comes back from the engine, with its assigned id. */

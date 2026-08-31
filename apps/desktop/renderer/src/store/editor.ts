@@ -16,7 +16,7 @@ import type {
   Operation,
   OutputSpace,
 } from '@photoy/types';
-import { NEUTRAL_ADJUSTMENTS, NO_MASK } from '@photoy/types';
+import { NEUTRAL_ADJUSTMENTS, NO_MASK, SEGMENTED_LEVELS } from '@photoy/types';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
 
@@ -122,6 +122,7 @@ interface EditorState {
   /** Segments the subject and cuts everything else away, as one action. */
   removeBackground(): Promise<void>;
   setLayerFill(id: number, fill: FillKind, color?: FillColor): Promise<void>;
+  setLayerDecontaminate(id: number, amount: number, continuing: boolean): Promise<void>;
   moveLayer(id: number, delta: number): Promise<void>;
 
   beginCrop(): void;
@@ -554,6 +555,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ busy: null });
     await get().setLayerMask(id, {
       ...NO_MASK,
+      ...SEGMENTED_LEVELS,
       kind: 'raster',
       raster: segmented.value.raster,
       rasterWidth: segmented.value.width,
@@ -568,6 +570,20 @@ export const useEditor = create<EditorState>((set, get) => ({
       set,
       get,
       await window.photoy.applyEdit(document.id, { kind: 'setLayerFill', layerId: id, fill, color }),
+    );
+  },
+
+  setLayerDecontaminate: async (id, amount, continuing) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(
+        document.id,
+        { kind: 'setLayerDecontaminate', layerId: id, decontaminate: amount },
+        continuing,
+      ),
     );
   },
 
@@ -604,6 +620,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ selectedLayerId: target.id });
     await get().setLayerMask(target.id, {
       ...NO_MASK,
+      ...SEGMENTED_LEVELS,
       kind: 'raster',
       raster: segmented.value.raster,
       rasterWidth: segmented.value.width,
