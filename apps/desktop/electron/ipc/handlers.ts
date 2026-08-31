@@ -1,9 +1,12 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
-import { Channels, type ApiResult } from '@photoy/ipc';
+import { Channels, Events, type ApiResult, type OpenedProject, type ProjectState } from '@photoy/ipc';
 import type { DocumentInfo, EditHistory, ExportResult, Operation, PreviewInfo } from '@photoy/types';
 import { EngineCallError, type EngineClient } from '../engine/engine-client.js';
 import { PathRejected, resolveReadablePath, resolveWritablePath } from './paths.js';
+import type { Recovery, Session } from './session.js';
+
+const PROJECT_FILTERS = [{ name: 'Projeto Photoy', extensions: ['myphoto'] }];
 
 const IMAGE_FILTERS = [
   { name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'webp'] },
@@ -37,7 +40,46 @@ function handle<T>(channel: string, run: (...args: never[]) => Promise<T>): void
   });
 }
 
-export function registerIpcHandlers(engine: EngineClient): void {
+export function registerIpcHandlers(
+  engine: EngineClient,
+  session: Session,
+  recovery: Recovery,
+): void {
+  const announce = () => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window?.webContents.send(Events.projectChanged, session.state());
+  };
+
+  /** Every edit is a change the saved project does not have yet. */
+  const markDirty = () => {
+    if (session.dirty) return;
+    session.dirty = true;
+    announce();
+  };
+
+  const openProjectAt = async (projectPath: string): Promise<OpenedProject> => {
+    const { result } = await engine.call<DocumentInfo & { history: EditHistory; projectPath: string }>(
+      'project.open',
+      { path: projectPath },
+    );
+    const { history, ...document } = result;
+    session.open(document.id, document.image.fileName, projectPath);
+    announce();
+    return { document, history, path: projectPath };
+  };
+
+  const saveTo = async (projectPath: string): Promise<ProjectState> => {
+    if (session.documentId === null) throw new PathRejected('Nothing to save', 'no document');
+    await engine.call('project.save', { documentId: session.documentId, path: projectPath });
+    session.path = projectPath;
+    session.dirty = false;
+    // The unfinished session is only meaningful until the work is somewhere
+    // safe; keeping it would offer to restore something already saved.
+    recovery.clear();
+    announce();
+    return session.state();
+  };
+
   handle(Channels.engineDescribe, async () => {
     const { result } = await engine.call('engine.describe');
     return result;
@@ -56,17 +98,27 @@ export function registerIpcHandlers(engine: EngineClient): void {
     if (picked.canceled || picked.filePaths.length === 0) return null;
     const filePath = resolveReadablePath(picked.filePaths[0]);
     const { result } = await engine.call<DocumentInfo>('image.open', { path: filePath });
+    // A photograph opened directly is not yet a project: it has no path to save
+    // back to, and the first save has to ask for one.
+    session.open(result.id, result.image.fileName, null);
+    announce();
     return result;
   });
 
   handle(Channels.imageOpenPath, async (candidate: string): Promise<DocumentInfo> => {
     const filePath = resolveReadablePath(candidate);
     const { result } = await engine.call<DocumentInfo>('image.open', { path: filePath });
+    session.open(result.id, result.image.fileName, null);
+    announce();
     return result;
   });
 
   handle(Channels.imageClose, async (documentId: string) => {
     const { result } = await engine.call<{ closed: boolean }>('image.close', { documentId });
+    if (session.documentId === documentId) {
+      session.close();
+      announce();
+    }
     return result;
   });
 
@@ -119,10 +171,12 @@ export function registerIpcHandlers(engine: EngineClient): void {
     return result;
   });
 
-  const editCall = (method: string) => async (documentId: string): Promise<EditHistory> => {
-    const { result } = await engine.call<EditHistory>(method, { documentId });
-    return result;
-  };
+  const editCall = (method: string, dirties: boolean) =>
+    async (documentId: string): Promise<EditHistory> => {
+      const { result } = await engine.call<EditHistory>(method, { documentId });
+      if (dirties) markDirty();
+      return result;
+    };
 
   handle(Channels.editApply, async (documentId: string, operation: Operation, replaceTop: boolean) => {
     const { result } = await engine.call<EditHistory>('edit.apply', {
@@ -130,12 +184,65 @@ export function registerIpcHandlers(engine: EngineClient): void {
       operation,
       replaceTop,
     });
+    markDirty();
     return result;
   });
-  handle(Channels.editUndo, editCall('edit.undo'));
-  handle(Channels.editRedo, editCall('edit.redo'));
-  handle(Channels.editReset, editCall('edit.reset'));
-  handle(Channels.editHistory, editCall('edit.history'));
+  handle(Channels.editUndo, editCall('edit.undo', true));
+  handle(Channels.editRedo, editCall('edit.redo', true));
+  handle(Channels.editReset, editCall('edit.reset', true));
+  // Reading the stack changes nothing, so it must not mark the session dirty.
+  handle(Channels.editHistory, editCall('edit.history', false));
+
+  handle(Channels.projectOpen, async (): Promise<OpenedProject | null> => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options = { title: 'Abrir projeto', properties: ['openFile' as const], filters: PROJECT_FILTERS };
+    const picked = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    if (picked.canceled || picked.filePaths.length === 0) return null;
+    return openProjectAt(path.resolve(picked.filePaths[0] as string));
+  });
+
+  const chooseProjectPath = async (): Promise<string | null> => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const base = session.fileName.replace(/\.[^.]+$/, '') || 'projeto';
+    const options = {
+      title: 'Salvar projeto',
+      defaultPath: `${base}.myphoto`,
+      filters: PROJECT_FILTERS,
+    };
+    const picked = window
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+    return picked.canceled || !picked.filePath ? null : path.resolve(picked.filePath);
+  };
+
+  handle(Channels.projectSave, async (): Promise<ProjectState | null> => {
+    const target = session.path ?? (await chooseProjectPath());
+    return target === null ? null : saveTo(target);
+  });
+
+  handle(Channels.projectSaveAs, async (): Promise<ProjectState | null> => {
+    const target = await chooseProjectPath();
+    return target === null ? null : saveTo(target);
+  });
+
+  handle(Channels.projectState, async () => session.state());
+
+  handle(Channels.recoveryTake, async (): Promise<OpenedProject | null> => {
+    if (recovery.offer() === null) return null;
+    const opened = await openProjectAt(recovery.projectPath);
+    // The restored session has no home of its own: the first save must ask.
+    session.path = null;
+    session.dirty = true;
+    recovery.clear();
+    announce();
+    return { ...opened, path: null };
+  });
+
+  handle(Channels.recoveryDiscard, async () => {
+    recovery.clear();
+  });
 
   handle(Channels.recentList, async () => [] as string[]);
 }

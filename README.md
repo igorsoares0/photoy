@@ -4,10 +4,12 @@ Editor de fotos desktop local-first. Especificação completa em
 [`docs/photo-editor-spec-driven-development.md`](docs/photo-editor-spec-driven-development.md);
 o sistema visual em [`docs/style-guide.html`](docs/style-guide.html).
 
-**Estado: Milestone 1 completo e Milestone 2 em 10 de 11**, mais gerenciamento de
-cor e a pilha de edições não destrutiva com fila de jobs. Abrir, decodificar,
-gerenciar cor, canvas, zoom, pan, girar, espelhar, recortar com alças e
-proporções, ajustar luz e cor, desfazer/refazer e exportar.
+**Estado: Milestone 1 completo, Milestone 2 em 10 de 11, Milestone 3 com camadas,
+máscaras paramétricas, projeto e autosave.** Abrir, decodificar, gerenciar cor, canvas, zoom, pan, girar,
+espelhar, recortar com alças e proporções, empilhar camadas de ajuste com
+opacidade, modo de mistura e **máscara**, desfazer/refazer, salvar e reabrir
+projetos,
+recuperar uma sessão interrompida, e exportar.
 
 ## Convenções
 
@@ -42,7 +44,8 @@ alguns minutos por causa da compilação dos codecs; as seguintes são quase ins
 
 ## Uso
 
-Atalhos: `Ctrl+O` abrir · `Ctrl+E` exportar · `Ctrl+Z` / `Ctrl+Shift+Z` desfazer e refazer ·
+Atalhos: `Ctrl+O` abrir foto · `Ctrl+Shift+O` abrir projeto · `Ctrl+S` salvar ·
+`Ctrl+Shift+S` salvar como · `Ctrl+E` exportar · `Ctrl+Z` / `Ctrl+Shift+Z` desfazer e refazer ·
 `Ctrl+[` / `Ctrl+]` girar · `Ctrl+0` ajustar · `Ctrl+1` tamanho real. Duplo clique num
 slider o zera.
 
@@ -109,6 +112,20 @@ não existe versão divergente entre o main process e o renderer.
 - **Recorte é expresso no que o usuário vê.** O retângulo chega em coordenadas já giradas e
   é mapeado de volta pela orientação acumulada. O contrário obrigaria a UI a conhecer a
   álgebra da pilha.
+- **O arquivo de projeto guarda exatamente o JSON que o protocolo carrega.** Um esquema para
+  manter correto, não dois que divergem — e um projeto pode ser lido por qualquer coisa que
+  já fale o protocolo.
+- **Violeta aparece nas máscaras e em mais nada.** O style guide o reserva para o que um
+  modelo tocou e para máscaras; gastá-lo como ênfase o esvaziaria antes de a IA chegar.
+- **A sobreposição da máscara mostra a fronteira, não a queda.** A linha tracejada é exata
+  porque o ponto médio é um número que a máscara já carrega; o banho violeta ao lado é uma
+  rampa linear e a engine usa um smoothstep. Desenhar a queda seria uma figura que discorda
+  da figura.
+- **Camadas são algo em que se opta, não um passo antes do slider.** Mover um controle numa
+  foto sem camadas cria a camada de que ele precisa. Quem nunca abrir o painel de camadas
+  nunca precisa saber que elas existem.
+- **Seleção de camada é superfície mais anel, não violeta.** O style guide reserva violeta
+  para o que um modelo tocou; usá-lo como ênfase de seleção o gastaria.
 - **Recorte só entra na pilha quando confirmado.** Enquadrar é uma decisão; o histórico
   registra a decisão, não cada retângulo tentado no caminho até ela. `Enter` aplica, `Esc`
   desiste, e a ferramenta toma o painel enquanto está aberta.
@@ -164,12 +181,67 @@ Milestone 2 em diante. Consequências visíveis hoje:
 - **Jobs reportam estado, não porcentagem.** `queued → running → completed/cancelled/failed`
   chega como evento, mas nenhuma operação de hoje sabe reportar uma fração real, e o style
   guide proíbe inventar uma. As porcentagens entram junto com as operações que sabem medi-las.
+- **Um seletor do zustand precisa devolver a mesma referência quando nada mudou.** Escrever
+  `?? []` ou montar um objeto dentro de um seletor faz o store ver mudança a cada chamada e
+  o renderer entra em laço até o React desistir. Já aconteceu três vezes aqui; para listas,
+  use a constante `NO_LAYERS`, e para tamanhos, selecione números.
 - **Os documentos residentes ficam fora do orçamento de jobs.** Uma foto de 24 MP ocupa
   192 MB enquanto estiver aberta, e nada contabiliza isso. Hoje a UI segura um documento por
   vez, então não incomoda; abrir vários exige estender o orçamento para cobri-los.
 - **A estimativa de abertura é um chute com piso**, porque o tamanho real só se conhece
   depois de ler o cabeçalho. Erra para cima de propósito: um job que superestima espera um
   pouco mais pela vez dele, um que subestima é admitido junto de outro e falta memória.
+
+### Máscaras
+
+As máscaras de hoje são **descritas, não pintadas**: um gradiente linear ou
+radial é meia dúzia de números. Isso resolve três problemas de uma vez — não
+ocupam memória, não trazem binário para o projeto, e avaliam em qualquer
+resolução sem nada ser reamostrado no caminho. A mesma máscara vale para um
+preview de 60 px e para uma exportação de 24 MP, e há teste comparando as duas.
+
+Coordenadas são frações do documento; distâncias usam o **lado mais curto** como
+unidade, que é o que mantém uma máscara radial circular num quadro que não é
+quadrado.
+
+Máscaras pintadas são pixels e vão precisar do diretório `masks/` do container —
+que já existe no formato à espera delas.
+
+### O projeto
+
+Um `.myphoto` é **um zip comum**, e isso é deliberado: se este aplicativo um dia
+não conseguir abrir um, a fotografia lá dentro continua a um duplo clique de
+distância.
+
+```
+manifest.json          o formato, a versão, e a lista de operações
+original/<arquivo>      os bytes originais, sem recompressão
+```
+
+Nada é comprimido. O original já é uma imagem comprimida, e deixar o manifesto
+legível significa que um projeto quebrado ainda se inspeciona com qualquer
+ferramenta.
+
+**O original vai embutido**, não referenciado. Um projeto que só apontasse para a
+foto perderia o valor no momento em que ela fosse movida.
+
+**A cauda de refazer é preservada.** Fechar e reabrir não descarta em silêncio o
+que um desfazer tinha posto de lado.
+
+Um projeto de um formato mais novo é **recusado, não lido pela metade** — abrir
+descartaria o que a versão nova gravou, e o próximo salvamento destruiria isso.
+
+### Autosave e recuperação
+
+O autosave escreve numa área própria do aplicativo, **nunca sobre o projeto do
+usuário**: um autosave que sobrescrevesse o arquivo em edição transformaria uma
+queda em perda de dados em vez de evitá-la.
+
+Uma sessão interrompida é **oferecida, nunca aplicada sozinha** — restaurar por
+conta própria substituiria o que a pessoa acabou de abrir. Sair de forma limpa
+apaga a sessão pendente: o que ficou por salvar foi escolha de quem estava lá.
+
+Intervalo padrão de 30 s, ajustável por `PHOTOY_AUTOSAVE_SECONDS`.
 
 ## Espinhos
 
@@ -189,7 +261,9 @@ apps/native/src/
   core/       erros, log, IO de arquivo com caminho UTF-8
   protocol/   framing e transporte stdio
   jobs/       fila de trabalho, supressão e cancelamento
-  edit/       operações, ajustes, pilha com undo/redo, avaliação em qualquer resolução
+  edit/       operações, ajustes, camadas, máscaras, pilha com undo/redo, avaliação em
+              qualquer resolução
+  project/    leitura e escrita do .myphoto
   color/      definição dos espaços, perfis ICC, matriz derivada e conversão rápida
   image/      buffer RGBA8/RGBA16, resample, orientação
   decoder/    sniffer, marcadores JPEG, EXIF, jpeg, png, tiff, webp

@@ -15,6 +15,12 @@ export const Channels = {
   editRedo: 'photoy:edit.redo',
   editReset: 'photoy:edit.reset',
   editHistory: 'photoy:edit.history',
+  projectOpen: 'photoy:project.open',
+  projectSave: 'photoy:project.save',
+  projectSaveAs: 'photoy:project.saveAs',
+  projectState: 'photoy:project.state',
+  recoveryTake: 'photoy:recovery.take',
+  recoveryDiscard: 'photoy:recovery.discard',
   recentList: 'photoy:recent.list',
   sessionBootstrap: 'photoy:session.bootstrap',
 } as const;
@@ -23,6 +29,7 @@ export const Channels = {
 export const Events = {
   engineStateChanged: 'photoy:engine.stateChanged',
   openRequested: 'photoy:shell.openRequested',
+  projectChanged: 'photoy:project.changed',
 } as const;
 
 export type ChannelName = (typeof Channels)[keyof typeof Channels];

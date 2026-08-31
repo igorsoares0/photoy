@@ -4,6 +4,7 @@ find_package(libpng CONFIG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(lcms CONFIG REQUIRED)
+find_package(libzip CONFIG REQUIRED)
 
 add_executable(photoy-engine
   src/main.cpp
@@ -25,9 +26,14 @@ add_executable(photoy-engine
   src/image/orientation.cpp
 
   src/edit/adjustments.cpp
+  src/edit/layer.cpp
+  src/edit/mask.cpp
   src/edit/operation.cpp
   src/edit/edit_stack.cpp
   src/edit/render.cpp
+  src/edit/serialize.cpp
+
+  src/project/project.cpp
 
   src/jobs/job_queue.cpp
 
@@ -61,4 +67,5 @@ target_link_libraries(photoy-engine PRIVATE
   WebP::webpdemux
   WebP::libwebpmux
   lcms::lcms
+  libzip::zip
 )

@@ -7,7 +7,7 @@
 #include "color/profile.h"
 #include "decoder/decoder.h"
 #include "decoder/exif.h"
-#include "edit/adjustments.h"
+#include "edit/layer.h"
 #include "image/image_buffer.h"
 #include "jobs/cancellation.h"
 
@@ -52,8 +52,8 @@ struct EncodeOptions {
   ExifBlob exif;
   /// ICC profile to embed, so the file says which space it is in.
   color::IccBytes icc;
-  /// Applied on the way out, so an export matches what the preview showed.
-  Adjustments adjustments;
+  /// Composited on the way out, so an export matches what the preview showed.
+  std::vector<Layer> layers;
 };
 
 std::vector<std::uint8_t> EncodeJpeg(const OutputImage& image, const EncodeOptions& options);

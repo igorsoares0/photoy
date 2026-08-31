@@ -4,7 +4,9 @@ import {
   Events,
   type ApiResult,
   type EngineState,
+  type OpenedProject,
   type PhotoyApi,
+  type ProjectState,
   type SessionBootstrap,
 } from '@photoy/ipc';
 import type {
@@ -54,6 +56,24 @@ const api: PhotoyApi = {
 
   resetEdits: (documentId: string) =>
     ipcRenderer.invoke(Channels.editReset, documentId) as Promise<ApiResult<EditHistory>>,
+
+  readHistory: (documentId: string) =>
+    ipcRenderer.invoke(Channels.editHistory, documentId) as Promise<ApiResult<EditHistory>>,
+
+  openProject: () => ipcRenderer.invoke(Channels.projectOpen) as Promise<ApiResult<OpenedProject | null>>,
+  saveProject: () => ipcRenderer.invoke(Channels.projectSave) as Promise<ApiResult<ProjectState | null>>,
+  saveProjectAs: () =>
+    ipcRenderer.invoke(Channels.projectSaveAs) as Promise<ApiResult<ProjectState | null>>,
+
+  takeRecovery: () =>
+    ipcRenderer.invoke(Channels.recoveryTake) as Promise<ApiResult<OpenedProject | null>>,
+  discardRecovery: () => ipcRenderer.invoke(Channels.recoveryDiscard) as Promise<ApiResult<void>>,
+
+  onProjectChanged: (listener: (state: ProjectState) => void) => {
+    const forward = (_event: unknown, state: ProjectState) => listener(state);
+    ipcRenderer.on(Events.projectChanged, forward);
+    return () => ipcRenderer.off(Events.projectChanged, forward);
+  },
 
   chooseExportPath: (suggestedName: string) =>
     ipcRenderer.invoke(Channels.imageExportDialog, suggestedName) as Promise<ApiResult<string | null>>,

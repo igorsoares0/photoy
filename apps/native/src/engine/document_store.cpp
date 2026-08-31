@@ -28,8 +28,12 @@ std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {
   if (!paths::Exists(utf8_path)) {
     throw EngineException(error_code::kFileNotFound, "File not found", utf8_path);
   }
+  return OpenFromMemory(paths::ReadAll(utf8_path), paths::FileName(utf8_path), utf8_path);
+}
 
-  const std::vector<std::uint8_t> bytes = paths::ReadAll(utf8_path);
+std::shared_ptr<Document> DocumentStore::OpenFromMemory(std::vector<std::uint8_t> bytes,
+                                                        const std::string& file_name,
+                                                        const std::string& origin_path) {
 
   ImageFormat format = ImageFormat::kUnknown;
   DecodedImage decoded = Decode(bytes, &format);
@@ -44,13 +48,14 @@ std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {
     const std::lock_guard<std::mutex> lock(mutex_);
     document->id = "doc-" + std::to_string(next_id_++);
   }
-  document->path = utf8_path;
-  document->file_name = paths::FileName(utf8_path);
+  document->path = origin_path;
+  document->file_name = file_name;
   document->format = format;
   document->bit_depth = decoded.bit_depth;
   document->has_alpha = decoded.has_alpha;
   document->orientation = decoded.orientation;
   document->file_size = static_cast<std::uint64_t>(bytes.size());
+  document->source_bytes = std::move(bytes);
   document->source = std::move(working);
   document->tagged = source_profile.valid();
   document->source_profile = source_profile.valid() ? source_profile.Description() : std::string();
@@ -58,6 +63,7 @@ std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {
     document->exif = ExtractJpegExif(bytes);
     NormalizeOrientationTag(document->exif);
   }
+
 
   log::Info("opened " + document->id + " " + std::to_string(document->source.width()) + "x" +
             std::to_string(document->source.height()) + " " + FormatName(format) + " " +

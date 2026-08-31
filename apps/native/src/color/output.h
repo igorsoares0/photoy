@@ -9,10 +9,15 @@
 
 namespace photoy::color {
 
-/// Applied to each pixel in working space before the conversion. The default
-/// does nothing and compiles away entirely.
+/**
+ * Applied to each pixel in working space before the conversion.
+ *
+ * Receives the pixel's position as well as its colour, because a mask varies
+ * across the frame and computing it here costs nothing extra. The default does
+ * nothing and compiles away entirely.
+ */
 struct NoPreProcess {
-  void operator()(float&, float&, float&) const noexcept {}
+  void operator()(float&, float&, float&, int, int) const noexcept {}
 };
 
 /**
@@ -74,7 +79,7 @@ class OutputConverter {
         float g = in[index + 1] * kFromSample;
         float b = in[index + 2] * kFromSample;
 
-        pre(r, g, b);
+        pre(r, g, b, x, y);
 
         const float lr = matrix_[0] * r + matrix_[1] * g + matrix_[2] * b;
         const float lg = matrix_[3] * r + matrix_[4] * g + matrix_[5] * b;

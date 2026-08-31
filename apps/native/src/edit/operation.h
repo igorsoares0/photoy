@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "edit/adjustments.h"
+#include "edit/layer.h"
 #include "image/orientation.h"
 #include "image/rect.h"
 
@@ -16,6 +17,13 @@ enum class OperationKind {
   kFlipVertical,
   kCrop,
   kAdjust,
+  kAddLayer,
+  kRemoveLayer,
+  kReorderLayer,
+  kSetLayerVisible,
+  kSetLayerOpacity,
+  kSetLayerBlend,
+  kSetLayerMask,
 };
 
 /**
@@ -37,6 +45,22 @@ struct Operation {
   /// kAdjust: the complete slider state, not a delta. Carrying the whole set
   /// means the entry in effect is the last one, with nothing to accumulate.
   Adjustments adjustments;
+
+  /// Layer this operation acts on. Zero means the topmost adjustment layer,
+  /// which is what lets a document with nothing but adjustments behave as if
+  /// layers were not there yet.
+  std::uint64_t target_layer = 0;
+  /// kReorderLayer: position among the adjustment layers, counting from the
+  /// bottom. kSetLayerVisible / kSetLayerOpacity / kSetLayerBlend use the
+  /// fields below.
+  int index = 0;
+  bool flag = true;
+  float amount = 1.0f;
+  BlendMode blend = BlendMode::kNormal;
+  /// kAddLayer: the name shown in the panel.
+  std::string name;
+  /// kSetLayerMask: where the layer applies.
+  Mask mask;
 
   /// Stable identifier, assigned on apply, so the host can address history entries.
   std::uint64_t id = 0;
@@ -72,7 +96,16 @@ struct Geometry {
 Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width,
                       int source_height);
 
-/// The adjustment state in effect, which is simply the last one recorded.
+/// The adjustment state in effect on the topmost adjustment layer.
 Adjustments FoldAdjustments(const std::vector<Operation>& operations) noexcept;
+
+/**
+ * Replays the operations into the layer stack they describe, bottom first.
+ *
+ * Identifiers are assigned during the replay rather than stored, so the same
+ * operation list always produces the same stack. That is what will let a
+ * project file be the list itself, with nothing to keep in sync.
+ */
+std::vector<Layer> FoldLayers(const std::vector<Operation>& operations);
 
 }  // namespace photoy

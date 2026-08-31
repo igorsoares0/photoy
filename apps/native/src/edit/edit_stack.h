@@ -37,6 +37,10 @@ class EditStack {
   /// Drops every operation, returning the document to the original.
   void Clear() noexcept;
 
+  /// Replaces the whole history, as when a project is opened. The redo tail is
+  /// restored too, so reopening does not throw away what an undo set aside.
+  void Load(std::vector<Operation> operations, std::size_t cursor);
+
   /// The operations currently in effect, in order.
   std::vector<Operation> Active() const;
 

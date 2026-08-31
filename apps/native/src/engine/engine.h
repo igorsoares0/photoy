@@ -13,7 +13,7 @@
 namespace photoy {
 
 inline constexpr const char* kEngineName = "photoy-engine";
-inline constexpr const char* kEngineVersion = "0.2.0";
+inline constexpr const char* kEngineVersion = "0.3.0";
 
 /**
  * Dispatches protocol requests onto the image pipeline.
@@ -49,6 +49,8 @@ class Engine {
 
   // Worker-thread handlers.
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);
+  protocol::Frame OpenProject(std::int64_t id, const nlohmann::json& params);
+  protocol::Frame SaveProjectJob(std::int64_t id, const nlohmann::json& params);
   protocol::Frame RenderPreviewJob(std::int64_t id, const nlohmann::json& params,
                                    const CancellationTokenPtr& token);
   protocol::Frame ExportImage(std::int64_t id, const nlohmann::json& params,

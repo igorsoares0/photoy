@@ -9,7 +9,10 @@
 #include "core/log.h"
 #include "core/paths.h"
 #include "decoder/format_sniffer.h"
+#include "core/json.h"
 #include "edit/render.h"
+#include "edit/serialize.h"
+#include "project/project.h"
 #include "export/encoder.h"
 
 namespace photoy {
@@ -33,31 +36,9 @@ protocol::Frame MakeFailure(std::int64_t id, const std::string& code, const std:
   return frame;
 }
 
-/// Reads a required string field, failing with a precise message when missing.
-std::string RequireString(const json& params, const char* key) {
-  if (!params.is_object() || !params.contains(key) || !params.at(key).is_string()) {
-    throw EngineException(error_code::kInvalidRequest, "Missing request parameter",
-                          std::string("expected string \"") + key + "\"");
-  }
-  return params.at(key).get<std::string>();
-}
-
-int RequireInt(const json& params, const char* key) {
-  if (!params.is_object() || !params.contains(key) || !params.at(key).is_number_integer()) {
-    throw EngineException(error_code::kInvalidRequest, "Missing request parameter",
-                          std::string("expected integer \"") + key + "\"");
-  }
-  return params.at(key).get<int>();
-}
-
-int OptionalInt(const json& params, const char* key, int fallback) {
-  if (!params.is_object() || !params.contains(key) || !params.at(key).is_number()) return fallback;
-  return params.at(key).get<int>();
-}
-
-json DescribeRect(const Rect& rect) {
-  return json{{"x", rect.x}, {"y", rect.y}, {"width", rect.width}, {"height", rect.height}};
-}
+using json_util::OptionalInt;
+using json_util::RequireInt;
+using json_util::RequireString;
 
 json DescribeAdjustments(const Adjustments& a) {
   return json{{"exposure", a.exposure},     {"brightness", a.brightness},
@@ -66,13 +47,27 @@ json DescribeAdjustments(const Adjustments& a) {
               {"temperature", a.temperature}};
 }
 
+json DescribeLayer(const Layer& layer) {
+  return json{{"id", layer.id},
+              {"kind", LayerKindName(layer.kind)},
+              {"visible", layer.visible},
+              {"opacity", layer.opacity},
+              {"blend", BlendModeName(layer.blend)},
+              {"name", layer.name},
+              {"adjustments", DescribeAdjustments(layer.adjustments)},
+              {"mask",
+               json{{"kind", MaskKindName(layer.mask.kind)},
+                    {"x", layer.mask.x},
+                    {"y", layer.mask.y},
+                    {"angle", layer.mask.angle},
+                    {"radius", layer.mask.radius},
+                    {"feather", layer.mask.feather},
+                    {"invert", layer.mask.invert}}}};
+}
+
 json DescribeOperation(const Operation& operation) {
-  json entry{{"id", operation.id}, {"kind", operation.KindName()}};
-  if (operation.kind == OperationKind::kRotate) entry["quarters"] = operation.quarters;
-  if (operation.kind == OperationKind::kCrop) entry["rect"] = DescribeRect(operation.rect);
-  if (operation.kind == OperationKind::kAdjust) {
-    entry["adjustments"] = DescribeAdjustments(operation.adjustments);
-  }
+  json entry = ToJson(operation);
+  entry["id"] = operation.id;
   return entry;
 }
 
@@ -88,8 +83,14 @@ json DescribeHistory(const Document& document) {
   const Geometry geometry =
       FoldGeometry(active, document.source.width(), document.source.height());
 
+  // Layers are reported bottom first, the order they composite in. The panel
+  // reverses them for display, because a stack reads downwards.
+  json layers = json::array();
+  for (const Layer& layer : FoldLayers(active)) layers.push_back(DescribeLayer(layer));
+
   return json{{"documentId", document.id},
               {"entries", std::move(entries)},
+              {"layers", std::move(layers)},
               {"adjustments", DescribeAdjustments(FoldAdjustments(active))},
               {"cursor", document.stack.cursor()},
               {"canUndo", document.stack.CanUndo()},
@@ -119,66 +120,6 @@ json DescribeDocument(const Document& document) {
             {"tagged", document.tagged},
             {"sourceProfile", document.source_profile},
             {"fileSize", document.file_size}}}};
-}
-
-Operation ParseOperation(const json& params) {
-  const std::string kind = RequireString(params, "kind");
-  Operation operation;
-
-  if (kind == "rotate") {
-    operation.kind = OperationKind::kRotate;
-    const int quarters = ((OptionalInt(params, "quarters", 1) % 4) + 4) % 4;
-    if (quarters == 0) {
-      throw EngineException(error_code::kInvalidRequest, "Rotation would do nothing",
-                            "quarters must not be a multiple of four");
-    }
-    operation.quarters = quarters;
-    return operation;
-  }
-  if (kind == "flipHorizontal") {
-    operation.kind = OperationKind::kFlipHorizontal;
-    return operation;
-  }
-  if (kind == "flipVertical") {
-    operation.kind = OperationKind::kFlipVertical;
-    return operation;
-  }
-  if (kind == "adjust") {
-    operation.kind = OperationKind::kAdjust;
-    const json& values =
-        params.contains("adjustments") && params.at("adjustments").is_object()
-            ? params.at("adjustments")
-            : json::object();
-    const auto read = [&values](const char* key) {
-      return values.contains(key) && values.at(key).is_number()
-                 ? values.at(key).get<float>()
-                 : 0.0f;
-    };
-    operation.adjustments.exposure = std::clamp(read("exposure"), -5.0f, 5.0f);
-    operation.adjustments.brightness = std::clamp(read("brightness"), -100.0f, 100.0f);
-    operation.adjustments.contrast = std::clamp(read("contrast"), -100.0f, 100.0f);
-    operation.adjustments.highlights = std::clamp(read("highlights"), -100.0f, 100.0f);
-    operation.adjustments.shadows = std::clamp(read("shadows"), -100.0f, 100.0f);
-    operation.adjustments.saturation = std::clamp(read("saturation"), -100.0f, 100.0f);
-    operation.adjustments.temperature = std::clamp(read("temperature"), -100.0f, 100.0f);
-    return operation;
-  }
-  if (kind == "crop") {
-    operation.kind = OperationKind::kCrop;
-    if (!params.contains("rect") || !params.at("rect").is_object()) {
-      throw EngineException(error_code::kInvalidRequest, "Missing request parameter",
-                            "crop needs a rect");
-    }
-    const json& rect = params.at("rect");
-    operation.rect = {RequireInt(rect, "x"), RequireInt(rect, "y"), RequireInt(rect, "width"),
-                      RequireInt(rect, "height")};
-    if (operation.rect.empty()) {
-      throw EngineException(error_code::kInvalidRequest, "Crop rectangle is empty",
-                            "width and height must both be positive");
-    }
-    return operation;
-  }
-  throw EngineException(error_code::kInvalidRequest, "Unknown operation", kind);
 }
 
 /**
@@ -264,7 +205,8 @@ void Engine::Dispatch(const nlohmann::json& header) {
   }
 
   const bool known = method == "image.open" || method == "image.renderPreview" ||
-                     method == "image.export";
+                     method == "image.export" || method == "project.open" ||
+                     method == "project.save";
   if (!known) {
     return transport_.Write(MakeFailure(id, error_code::kInvalidRequest, "Unknown method", method));
   }
@@ -280,6 +222,10 @@ void Engine::Dispatch(const nlohmann::json& header) {
                      EmitJobState(id, "running");
                      if (method == "image.open") {
                        response = OpenImage(id, params);
+                     } else if (method == "project.open") {
+                       response = OpenProject(id, params);
+                     } else if (method == "project.save") {
+                       response = SaveProjectJob(id, params);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -316,11 +262,14 @@ void Engine::Dispatch(const nlohmann::json& header) {
  */
 std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::json& params) const {
   try {
-    if (method == "image.open") {
-      const std::string path = RequireString(params, "path");
-      return estimate::Open(paths::FileSize(path));
+    if (method == "image.open" || method == "project.open") {
+      return estimate::Open(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+    if (method == "project.save") {
+      // Saving holds the archive and a copy of it in memory at the same time.
+      return std::max<std::uint64_t>(64ull * 1024 * 1024, document->source_bytes.size() * 3);
+    }
     if (method == "image.export") {
       return estimate::Export(static_cast<std::uint64_t>(document->source.width()),
                               static_cast<std::uint64_t>(document->source.height()));
@@ -346,7 +295,12 @@ nlohmann::json Engine::Describe() const {
               {"encodeFormats", json::array({"jpeg", "png", "tiff", "webp"})},
               {"outputSpaces", json::array({"srgb", "display-p3", "adobe-rgb"})},
               {"operations",
-               json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "adjust"})},
+               json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "adjust",
+                            "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",
+                            "setLayerOpacity", "setLayerBlend", "setLayerMask"})},
+              {"blendModes",
+               json::array({"normal", "multiply", "screen", "overlay", "soft-light"})},
+              {"maskKinds", json::array({"none", "linear", "radial"})},
               {"workingSpace", "linear-prophoto-16"},
               {"jobs",
                json{{"workers", stats.workers},
@@ -366,7 +320,7 @@ nlohmann::json Engine::ApplyEdit(const json& params) {
     throw EngineException(error_code::kInvalidRequest, "Missing request parameter",
                           "expected object \"operation\"");
   }
-  Operation operation = ParseOperation(params.at("operation"));
+  Operation operation = FromJson(params.at("operation"));
 
   {
     const std::lock_guard<std::mutex> lock(document->stack_mutex);
@@ -426,6 +380,39 @@ protocol::Frame Engine::OpenImage(std::int64_t id, const json& params) {
   return MakeSuccess(id, DescribeDocument(*document));
 }
 
+protocol::Frame Engine::OpenProject(std::int64_t id, const json& params) {
+  const std::string path = RequireString(params, "path");
+  Project project = LoadProject(path);
+  const std::shared_ptr<Document> document = documents_.OpenFromMemory(
+      std::move(project.source.bytes), project.source.file_name, project.source.origin_path);
+  {
+    const std::lock_guard<std::mutex> lock(document->stack_mutex);
+    document->stack.Load(std::move(project.operations), project.cursor);
+  }
+  json result = DescribeDocument(*document);
+  result["history"] = DescribeHistory(*document);
+  result["projectPath"] = path;
+  return MakeSuccess(id, std::move(result));
+}
+
+protocol::Frame Engine::SaveProjectJob(std::int64_t id, const json& params) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::string target = RequireString(params, "path");
+
+  Project project;
+  project.source.file_name = document->file_name;
+  project.source.origin_path = document->path;
+  project.source.bytes = document->source_bytes;
+  {
+    const std::lock_guard<std::mutex> lock(document->stack_mutex);
+    project.operations = document->stack.All();
+    project.cursor = document->stack.cursor();
+  }
+
+  SaveProject(project, target);
+  return MakeSuccess(id, json{{"path", target}, {"byteLength", paths::FileSize(target)}});
+}
+
 protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
                                          const CancellationTokenPtr& token) {
   const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
@@ -449,8 +436,8 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
     document->CacheBase(plan, base);
   }
 
-  Image8 pixels = RenderOutput(*base, FoldAdjustments(operations), color::OutputSpace::kSrgb,
-                               token);
+  Image8 pixels =
+      ComposeToOutput8(*base, FoldLayers(operations), color::OutputSpace::kSrgb, token);
 
   if (log::Enabled(log::Level::kDebug)) {
     const double elapsed = std::chrono::duration<double, std::milli>(
@@ -495,7 +482,7 @@ protocol::Frame Engine::ExportImage(std::int64_t id, const json& params,
   options.icc = color::Profile::ForOutput(options.space).Serialize();
 
   const std::vector<Operation> operations = document->ActiveOperations();
-  options.adjustments = FoldAdjustments(operations);
+  options.layers = FoldLayers(operations);
 
   const auto started = std::chrono::steady_clock::now();
   // Export renders the same stack the preview does, only at full resolution.

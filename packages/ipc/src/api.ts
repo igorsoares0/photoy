@@ -11,10 +11,37 @@ import type { EngineDescription } from './methods.js';
 
 export type EngineState = 'starting' | 'ready' | 'stopped' | 'failed';
 
+/** A document plus the stack it was opened with. */
+export interface OpenedProject {
+  document: DocumentInfo;
+  history: EditHistory;
+  path: string | null;
+}
+
 export interface SessionBootstrap {
   engineState: EngineState;
   /** A file the app was launched with, or null. */
   pendingOpenPath: string | null;
+  /**
+   * A session the last run did not finish, if there is one. The user decides
+   * whether to take it; nothing is restored behind their back.
+   */
+  recovery: RecoveryOffer | null;
+}
+
+export interface RecoveryOffer {
+  /** Name of the photograph the unfinished session was working on. */
+  fileName: string;
+  /** When it was last written, in milliseconds since the epoch. */
+  savedAt: number;
+}
+
+/** What is open, and whether it has changes the project file does not have. */
+export interface ProjectState {
+  /** Path of the .myphoto this document is saved as, or null if never saved. */
+  path: string | null;
+  /** True when there are edits the saved project does not contain. */
+  dirty: boolean;
 }
 
 /**
@@ -57,6 +84,22 @@ export interface PhotoyApi {
   undoEdit(documentId: string): Promise<ApiResult<EditHistory>>;
   redoEdit(documentId: string): Promise<ApiResult<EditHistory>>;
   resetEdits(documentId: string): Promise<ApiResult<EditHistory>>;
+  /** Reads the stack without changing it, so a freshly opened document is known. */
+  readHistory(documentId: string): Promise<ApiResult<EditHistory>>;
+
+  /** Opens the picker, then a .myphoto. Resolves to null when cancelled. */
+  openProject(): Promise<ApiResult<OpenedProject | null>>;
+  /** Saves to the current path, asking for one the first time. */
+  saveProject(): Promise<ApiResult<ProjectState | null>>;
+  /** Always asks for a path. */
+  saveProjectAs(): Promise<ApiResult<ProjectState | null>>;
+
+  /** Opens the unfinished session the last run left behind. */
+  takeRecovery(): Promise<ApiResult<OpenedProject | null>>;
+  /** Throws it away, so it stops being offered. */
+  discardRecovery(): Promise<ApiResult<void>>;
+
+  onProjectChanged(listener: (state: ProjectState) => void): () => void;
 
   /** Opens the native save dialog and returns the chosen destination. */
   chooseExportPath(suggestedName: string): Promise<ApiResult<string | null>>;

@@ -4,6 +4,7 @@ import { Channels, Events } from '@photoy/ipc';
 import { EngineClient } from './engine/engine-client.js';
 import { locateEngine } from './engine/locate.js';
 import { registerIpcHandlers } from './ipc/handlers.js';
+import { Recovery, Session } from './ipc/session.js';
 import { resolveReadablePath } from './ipc/paths.js';
 import { createMainWindow } from './windows/main-window.js';
 
@@ -19,6 +20,43 @@ let mainWindow: BrowserWindow | null = null;
  * path is parked here and the renderer claims it once it is ready.
  */
 let pendingOpenPath: string | null = null;
+
+const openSession = new Session();
+let recovery: Recovery | null = null;
+let autosaveTimer: NodeJS.Timeout | null = null;
+
+/**
+ * How often the unfinished session is written.
+ *
+ * Long enough that it costs nothing while working, short enough that a crash
+ * loses a gesture rather than an afternoon. Overridable so the recovery path
+ * can be exercised without waiting half a minute for it.
+ */
+function autosaveIntervalMs(): number {
+  const seconds = Number(process.env['PHOTOY_AUTOSAVE_SECONDS']);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 30_000;
+}
+
+/**
+ * Writes the open document to the recovery slot.
+ *
+ * Never to the user's own project: an autosave that overwrote the file being
+ * edited would turn a crash into data loss instead of preventing one.
+ */
+async function autosave(engine: EngineClient): Promise<void> {
+  if (recovery === null || openSession.documentId === null || !openSession.dirty) return;
+  try {
+    recovery.prepare();
+    await engine.call('project.save', {
+      documentId: openSession.documentId,
+      path: recovery.projectPath,
+    });
+    recovery.mark(openSession.fileName, openSession.path);
+  } catch (error) {
+    // A failed autosave must not disturb the session it is protecting.
+    process.stderr.write(`[photoy] autosave failed: ${String(error)}\n`);
+  }
+}
 
 /** Picks up an image passed on the command line, e.g. "Open with Photoy". */
 function pathFromArgv(argv: string[]): string | null {
@@ -70,14 +108,26 @@ if (!app.requestSingleInstanceLock()) {
     });
     engine.start();
 
-    registerIpcHandlers(engine);
+    recovery = new Recovery();
+    // Read before anything can overwrite it: the offer describes the previous
+    // run, and this run's first autosave would replace it.
+    const offer = recovery.offer();
+
+    registerIpcHandlers(engine, openSession, recovery);
+
+    const worker = engine;
+    autosaveTimer = setInterval(() => void autosave(worker), autosaveIntervalMs());
 
     ipcMain.handle(Channels.sessionBootstrap, () => {
       const pendingPath = pendingOpenPath;
       pendingOpenPath = null;
       return {
         ok: true,
-        value: { engineState: engine?.state ?? 'stopped', pendingOpenPath: pendingPath },
+        value: {
+          engineState: engine?.state ?? 'stopped',
+          pendingOpenPath: pendingPath,
+          recovery: offer,
+        },
       };
     });
 
@@ -110,6 +160,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('before-quit', () => {
+    if (autosaveTimer !== null) clearTimeout(autosaveTimer);
+    // A clean exit means there is nothing to recover from. Anything unsaved was
+    // the user's choice to leave unsaved, and offering it back next time would
+    // be the application second-guessing them.
+    recovery?.clear();
     void engine?.stop();
   });
 }

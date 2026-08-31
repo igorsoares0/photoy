@@ -100,6 +100,10 @@ export function generateFixtures() {
     const patch = PATCHES[Math.floor(x / PATCH_SIZE)];
     return [...patch.rgb, 255];
   });
+  // A flat grey field, twice as wide as tall: any variation across it is the
+  // mask under test and nothing else, and the aspect catches a radial mask that
+  // has been stretched into an ellipse.
+  writePng('flat.png', 400, 200, () => [128, 128, 128, 255]);
   // Big enough that a render takes long enough to still be queued when the
   // next one arrives, which is what the cancellation tests need.
   writePng('large.png', LARGE_WIDTH, LARGE_HEIGHT, (x, y) => [

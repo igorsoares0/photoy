@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import type {
   AdjustmentKey,
   Adjustments,
+  BlendMode,
+  Layer,
+  Mask,
   Rect,
   DocumentInfo,
   EditHistory,
@@ -12,7 +15,7 @@ import type {
   OutputSpace,
 } from '@photoy/types';
 import { NEUTRAL_ADJUSTMENTS } from '@photoy/types';
-import type { ApiResult, EngineState } from '@photoy/ipc';
+import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
 
 export interface EditorError {
@@ -57,6 +60,14 @@ interface EditorState {
   history: EditHistory | null;
   /** What the sliders show while the engine catches up with a drag. */
   pendingAdjustments: Adjustments | null;
+  /** Which layer the sliders and the panel act on. */
+  selectedLayerId: number | null;
+  /** Path of the .myphoto this document is saved as, or null if never saved. */
+  projectPath: string | null;
+  /** True when there are edits the saved project does not contain. */
+  dirty: boolean;
+  /** An unfinished session from a previous run, waiting on the user's answer. */
+  recovery: RecoveryOffer | null;
   /**
    * The crop being composed, in document coordinates, or null when the tool is
    * not active. Nothing is applied until it is confirmed: framing is a decision,
@@ -86,6 +97,25 @@ interface EditorState {
   requestPreview(targetWidth: number, targetHeight: number): Promise<void>;
 
   applyEdit(operation: Operation): Promise<void>;
+
+  /** Reads the stack from the engine, so the panel knows it before any edit. */
+  refreshHistory(): Promise<void>;
+
+  setProjectState(state: { path: string | null; dirty: boolean }): void;
+  offerRecovery(offer: RecoveryOffer | null): void;
+  openProject(): Promise<void>;
+  saveProject(): Promise<void>;
+  saveProjectAs(): Promise<void>;
+  takeRecovery(): Promise<void>;
+  discardRecovery(): Promise<void>;
+  selectLayer(id: number): void;
+  addLayer(): Promise<void>;
+  removeLayer(id: number): Promise<void>;
+  setLayerVisible(id: number, visible: boolean): Promise<void>;
+  setLayerOpacity(id: number, opacity: number, continuing: boolean): Promise<void>;
+  setLayerBlend(id: number, blend: BlendMode): Promise<void>;
+  setLayerMask(id: number, mask: Mask, continuing?: boolean): Promise<void>;
+  moveLayer(id: number, delta: number): Promise<void>;
 
   beginCrop(): void;
   setCropRect(rect: Rect): void;
@@ -160,9 +190,31 @@ async function adoptHistory(
   });
 }
 
+/**
+ * Stable empty stack.
+ *
+ * A selector must return the same reference when nothing changed. Writing
+ * `?? []` inside one builds a fresh array on every call, the store sees a change
+ * every time, and the component re-renders until React gives up.
+ */
+export const NO_LAYERS: readonly Layer[] = [];
+
+/** The layer the panel is acting on: the chosen one, or the topmost adjustment. */
+export function selectedLayer(state: EditorState): Layer | null {
+  const layers = state.history?.layers ?? NO_LAYERS;
+  if (layers.length === 0) return null;
+  const chosen = layers.find((layer) => layer.id === state.selectedLayerId);
+  if (chosen !== undefined) return chosen;
+  for (let i = layers.length - 1; i >= 0; i -= 1) {
+    const layer = layers[i];
+    if (layer !== undefined && layer.kind === 'adjustment') return layer;
+  }
+  return layers[0] ?? null;
+}
+
 /** What the panel should show: the pending move, or what the engine confirmed. */
 export function currentAdjustments(state: EditorState): Adjustments {
-  return state.pendingAdjustments ?? state.history?.adjustments ?? NEUTRAL_ADJUSTMENTS;
+  return state.pendingAdjustments ?? selectedLayer(state)?.adjustments ?? NEUTRAL_ADJUSTMENTS;
 }
 
 /**
@@ -180,11 +232,33 @@ export function renderedSize(state: EditorState): { width: number; height: numbe
   return null;
 }
 
+/** Installs a document that arrived with its stack already loaded. */
+function adoptProject(set: SetState, get: GetState, opened: OpenedProject): void {
+  get().preview?.bitmap.close();
+  set({
+    document: opened.document,
+    history: opened.history,
+    projectPath: opened.path,
+    dirty: false,
+    pendingAdjustments: null,
+    selectedLayerId: null,
+    cropRect: null,
+    preview: null,
+    viewport: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
+    lastExport: null,
+    busy: null,
+  });
+}
+
 export const useEditor = create<EditorState>((set, get) => ({
   engineState: 'starting',
   document: null,
   history: null,
   pendingAdjustments: null,
+  selectedLayerId: null,
+  projectPath: null,
+  dirty: false,
+  recovery: null,
   cropRect: null,
   cropAspect: null,
   preview: null,
@@ -213,11 +287,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       document: response.value,
       history: null,
       pendingAdjustments: null,
+      selectedLayerId: null,
       cropRect: null,
       preview: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
     });
+    await get().refreshHistory();
   },
 
   openPath: async (path) => {
@@ -232,11 +308,13 @@ export const useEditor = create<EditorState>((set, get) => ({
       document: response.value,
       history: null,
       pendingAdjustments: null,
+      selectedLayerId: null,
       cropRect: null,
       preview: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
     });
+    await get().refreshHistory();
   },
 
   closeDocument: async () => {
@@ -335,6 +413,141 @@ export const useEditor = create<EditorState>((set, get) => ({
     await adoptHistory(set, get, await window.photoy.applyEdit(document.id, operation));
   },
 
+  setProjectState: ({ path, dirty }) => set({ projectPath: path, dirty }),
+  offerRecovery: (recovery) => set({ recovery }),
+
+  openProject: async () => {
+    set({ busy: 'opening', error: null });
+    const response = await window.photoy.openProject();
+    if (!response.ok) {
+      set({ busy: null, error: response.error });
+      return;
+    }
+    set({ busy: null });
+    if (response.value !== null) adoptProject(set, get, response.value);
+  },
+
+  saveProject: async () => {
+    const response = await window.photoy.saveProject();
+    if (!response.ok) set({ error: response.error });
+  },
+
+  saveProjectAs: async () => {
+    const response = await window.photoy.saveProjectAs();
+    if (!response.ok) set({ error: response.error });
+  },
+
+  takeRecovery: async () => {
+    set({ busy: 'opening', recovery: null, error: null });
+    const response = await window.photoy.takeRecovery();
+    if (!response.ok) {
+      set({ busy: null, error: response.error });
+      return;
+    }
+    set({ busy: null });
+    if (response.value !== null) adoptProject(set, get, response.value);
+  },
+
+  discardRecovery: async () => {
+    set({ recovery: null });
+    await window.photoy.discardRecovery();
+  },
+
+  refreshHistory: async () => {
+    const document = get().document;
+    if (document === null) return;
+    const response = await window.photoy.readHistory(document.id);
+    // Adopting would bump the render counter; reading the stack changes nothing
+    // on screen, so it only updates what the panel shows.
+    if (response.ok) set({ history: response.value });
+  },
+
+  selectLayer: (selectedLayerId) => set({ selectedLayerId, pendingAdjustments: null }),
+
+  addLayer: async () => {
+    const document = get().document;
+    if (document === null) return;
+    const before = get().history?.layers.map((layer) => layer.id) ?? [];
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'addLayer', name: 'Ajuste' }),
+    );
+    // Select what was just created, so the sliders act on it straight away.
+    const created = get().history?.layers.find((layer) => !before.includes(layer.id));
+    if (created !== undefined) set({ selectedLayerId: created.id });
+  },
+
+  removeLayer: async (id) => {
+    const document = get().document;
+    if (document === null) return;
+    if (get().selectedLayerId === id) set({ selectedLayerId: null });
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'removeLayer', layerId: id }),
+    );
+  },
+
+  setLayerVisible: async (id, visible) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'setLayerVisible', layerId: id, visible }),
+    );
+  },
+
+  setLayerOpacity: async (id, opacity, continuing) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(
+        document.id,
+        { kind: 'setLayerOpacity', layerId: id, opacity },
+        continuing,
+      ),
+    );
+  },
+
+  setLayerBlend: async (id, blend) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'setLayerBlend', layerId: id, blend }),
+    );
+  },
+
+  setLayerMask: async (id, mask, continuing = false) => {
+    const document = get().document;
+    if (document === null) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'setLayerMask', layerId: id, mask }, continuing),
+    );
+  },
+
+  moveLayer: async (id, delta) => {
+    const document = get().document;
+    const layers = get().history?.layers ?? [];
+    const at = layers.findIndex((layer) => layer.id === id);
+    if (document === null || at < 0) return;
+    // The background holds index 0 and nothing may be placed below it.
+    const target = Math.min(Math.max(1, at + delta), layers.length - 1);
+    if (target === at) return;
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, { kind: 'reorderLayer', layerId: id, index: target }),
+    );
+  },
+
   beginCrop: () => {
     const size = renderedSize(get());
     if (size === null) return;
@@ -369,13 +582,18 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (document === null) return;
 
     const next: Adjustments = { ...currentAdjustments(get()), [key]: value };
+    const layerId = get().selectedLayerId ?? undefined;
     // The panel reflects the move immediately; the engine confirms a moment
     // later. Waiting for the round trip would make the slider feel tethered.
     set({ pendingAdjustments: next });
     await adoptHistory(
       set,
       get,
-      await window.photoy.applyEdit(document.id, { kind: 'adjust', adjustments: next }, continuing),
+      await window.photoy.applyEdit(
+        document.id,
+        layerId === undefined ? { kind: 'adjust', adjustments: next } : { kind: 'adjust', adjustments: next, layerId },
+        continuing,
+      ),
     );
   },
 

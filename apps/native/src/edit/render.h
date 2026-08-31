@@ -4,6 +4,7 @@
 
 #include "color/primaries.h"
 #include "edit/adjustments.h"
+#include "edit/layer.h"
 #include "edit/operation.h"
 #include "image/image_buffer.h"
 #include "jobs/cancellation.h"
@@ -44,9 +45,19 @@ PreviewPlan PlanPreview(const std::vector<Operation>& operations, int source_wid
 Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
                        const CancellationTokenPtr& token);
 
-/// The colour half: adjustments and the conversion out, fused into one pass.
-Image8 RenderOutput(const Image16& base, const Adjustments& adjustments, color::OutputSpace space,
-                    const CancellationTokenPtr& token);
+/**
+ * The colour half: composites the layer stack and converts out, in one walk.
+ *
+ * All but the topmost visible layer run as their own pass over a working copy;
+ * the topmost is fused into the conversion. A document with no layers, or with
+ * one, therefore costs exactly what it did before layers existed.
+ */
+Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
+                        color::OutputSpace space, const CancellationTokenPtr& token);
+
+/// The same, at the depth a PNG or TIFF export can keep.
+Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
+                          color::OutputSpace space, const CancellationTokenPtr& token);
 
 /// Evaluates the geometry at full resolution, for export.
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

@@ -1,7 +1,9 @@
-import type { AdjustmentKey } from '@photoy/types';
-import { currentAdjustments, useEditor } from '../store/editor';
+import type { AdjustmentKey, BlendMode } from '@photoy/types';
+import { NO_LAYERS, currentAdjustments, selectedLayer, useEditor } from '../store/editor';
 import { formatSigned } from '../lib/format';
 import { CropPanel } from './CropPanel';
+import { LayersPanel } from './LayersPanel';
+import { MaskPanel } from './MaskPanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
 
@@ -29,6 +31,15 @@ const LIGHT: Control[] = [
   { key: 'contrast', label: 'Contraste', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
   { key: 'highlights', label: 'Realces', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
   { key: 'shadows', label: 'Sombras', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
+];
+
+/** Kept in English: these are the photographer's working terms. */
+const BLEND_MODES: Array<{ value: BlendMode; label: string }> = [
+  { value: 'normal', label: 'normal' },
+  { value: 'multiply', label: 'multiply' },
+  { value: 'screen', label: 'screen' },
+  { value: 'overlay', label: 'overlay' },
+  { value: 'soft-light', label: 'soft light' },
 ];
 
 const COLOUR: Control[] = [
@@ -80,9 +91,21 @@ function Group({ label, controls }: { label: string; controls: Control[] }): Rea
 export function AdjustmentsPanel(): React.JSX.Element {
   const document = useEditor((state) => state.document);
   const cropping = useEditor((state) => state.cropRect !== null);
+  const layer = useEditor(selectedLayer);
+  const setLayerOpacity = useEditor((state) => state.setLayerOpacity);
+  const setLayerBlend = useEditor((state) => state.setLayerBlend);
   const values = useEditor(currentAdjustments);
   const resetAdjustments = useEditor((state) => state.resetAdjustments);
   const touched = Object.values(values).some((value) => value !== 0);
+  const hasAdjustmentLayer = useEditor((state) =>
+    (state.history?.layers ?? NO_LAYERS).some((entry) => entry.kind === 'adjustment'),
+  );
+  // The original is what everything else is measured against and takes no edits.
+  // Before any layer exists the sliders are still live: moving one creates the
+  // layer it needs, so layers stay something you opt into rather than a step
+  // between you and a slider.
+  const editable = layer?.kind === 'adjustment' || !hasAdjustmentLayer;
+  const adjustmentLayer = layer?.kind === 'adjustment' ? layer : null;
 
   return (
     <aside
@@ -108,8 +131,53 @@ export function AdjustmentsPanel(): React.JSX.Element {
             className="flex flex-1 flex-col overflow-y-auto"
             style={{ padding: 'var(--pad-panel)', gap: 'var(--gap-group)' }}
           >
-            <Group label="Luz" controls={LIGHT} />
-            <Group label="Cor" controls={COLOUR} />
+            <LayersPanel />
+            {editable ? (
+              <>
+                {adjustmentLayer !== null ? (
+                  <PanelSection label="Mistura">
+                    <label className="flex items-center justify-between">
+                      <span style={{ fontSize: 'var(--text-control)', color: 'var(--fg-secondary)' }}>
+                        Modo
+                      </span>
+                      <select
+                        value={adjustmentLayer.blend}
+                        onChange={(event) =>
+                          void setLayerBlend(adjustmentLayer.id, event.target.value as BlendMode)
+                        }
+                        className="photoy-select"
+                      >
+                        {BLEND_MODES.map((mode) => (
+                          <option key={mode.value} value={mode.value}>
+                            {mode.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Slider
+                      label="Opacidade"
+                      value={Math.round(adjustmentLayer.opacity * 100)}
+                      min={0}
+                      max={100}
+                      display={`${Math.round(adjustmentLayer.opacity * 100)} %`}
+                      origin={100}
+                      idle={adjustmentLayer.opacity >= 1}
+                      onChange={(next, continuing) =>
+                        void setLayerOpacity(adjustmentLayer.id, next / 100, continuing)
+                      }
+                      onReset={() => void setLayerOpacity(adjustmentLayer.id, 1, false)}
+                    />
+                  </PanelSection>
+                ) : null}
+                {adjustmentLayer !== null ? <MaskPanel layer={adjustmentLayer} /> : null}
+                <Group label="Luz" controls={LIGHT} />
+                <Group label="Cor" controls={COLOUR} />
+              </>
+            ) : (
+              <span style={{ fontSize: 'var(--text-chip)', color: 'var(--fg-numeric-idle)' }}>
+                O original não recebe ajustes. Selecione uma camada acima dele, ou crie uma.
+              </span>
+            )}
           </div>
           <button
             type="button"

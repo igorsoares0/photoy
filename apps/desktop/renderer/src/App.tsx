@@ -3,6 +3,7 @@ import { useEditor } from './store/editor';
 import { AdjustmentsPanel } from './components/AdjustmentsPanel';
 import { Canvas } from './components/Canvas';
 import { CropOverlay } from './components/CropOverlay';
+import { MaskOverlay } from './components/MaskOverlay';
 import { EmptyState } from './components/EmptyState';
 import { ExportDialog } from './components/ExportDialog';
 import { Notices } from './components/Notices';
@@ -30,24 +31,32 @@ export function App(): React.JSX.Element {
   const beginCrop = useEditor((state) => state.beginCrop);
   const confirmCrop = useEditor((state) => state.confirmCrop);
   const cancelCrop = useEditor((state) => state.cancelCrop);
+  const setProjectState = useEditor((state) => state.setProjectState);
+  const offerRecovery = useEditor((state) => state.offerRecovery);
+  const openProject = useEditor((state) => state.openProject);
+  const saveProject = useEditor((state) => state.saveProject);
+  const saveProjectAs = useEditor((state) => state.saveProjectAs);
 
   useEffect(() => {
     const stopState = window.photoy.onEngineStateChanged(setEngineState);
     const stopOpen = window.photoy.onOpenRequested((path) => void openPath(path));
+    const stopProject = window.photoy.onProjectChanged(setProjectState);
 
     // Pushed events only cover what happens from here on, so pull whatever the
     // main process already settled before this component existed.
     void window.photoy.bootstrap().then((session) => {
       if (!session.ok) return;
       setEngineState(session.value.engineState);
+      offerRecovery(session.value.recovery);
       if (session.value.pendingOpenPath !== null) void openPath(session.value.pendingOpenPath);
     });
 
     return () => {
       stopState();
       stopOpen();
+      stopProject();
     };
-  }, [setEngineState, openPath]);
+  }, [setEngineState, openPath, setProjectState, offerRecovery]);
 
   const fit = useCallback(() => {
     const box = stageRef.current?.getBoundingClientRect();
@@ -57,9 +66,14 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const accel = event.ctrlKey || event.metaKey;
-      if (accel && event.key === 'o') {
+      if (accel && event.key.toLowerCase() === 'o') {
         event.preventDefault();
-        void openDialog();
+        void (event.shiftKey ? openProject() : openDialog());
+        return;
+      }
+      if (accel && event.key.toLowerCase() === 's' && document !== null) {
+        event.preventDefault();
+        void (event.shiftKey ? saveProjectAs() : saveProject());
         return;
       }
       if (accel && event.key === 'e' && document !== null) {
@@ -139,6 +153,9 @@ export function App(): React.JSX.Element {
     beginCrop,
     confirmCrop,
     cancelCrop,
+    openProject,
+    saveProject,
+    saveProjectAs,
   ]);
 
   // Drag and drop. The path is resolved in the preload and re-validated in the
@@ -175,6 +192,7 @@ export function App(): React.JSX.Element {
         <div ref={stageRef} className="relative flex min-h-0 min-w-0 flex-1">
           <Canvas />
           <CropOverlay container={stageRef} />
+          <MaskOverlay container={stageRef} />
           {document === null ? (
             <EmptyState dragging={dragging} />
           ) : (

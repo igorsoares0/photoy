@@ -196,3 +196,42 @@ button {
   border-color: var(--border-hover);
   color: var(--fg-primary);
 }
+
+.photoy-layer-row:hover {
+  background: var(--surface-hover);
+}
+
+.photoy-mini {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-chip);
+  line-height: 1;
+  color: var(--fg-muted);
+  transition: var(--transition-control);
+}
+.photoy-mini:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--fg-primary);
+}
+.photoy-mini:disabled {
+  opacity: 0.28;
+}
+
+.photoy-select {
+  appearance: none;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-quiet);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-primary);
+  font-size: var(--text-control);
+  font-family: var(--font-sans);
+}
+.photoy-select:hover {
+  border-color: var(--border-hover);
+}
+.photoy-select option {
+  background: var(--surface-raised);
+}

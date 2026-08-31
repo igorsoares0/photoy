@@ -6,6 +6,10 @@
   "builtin-baseline": "abb6dda5cc32914d2e64d7d72b974dc301d1fc8a",
   "dependencies": [
     "lcms",
+    {
+      "name": "libzip",
+      "default-features": false
+    },
     "libjpeg-turbo",
     "libpng",
     {

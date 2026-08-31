@@ -5,29 +5,10 @@
 #include "color/pipeline.h"
 #include "core/error.h"
 #include "core/paths.h"
+#include "edit/render.h"
 
 namespace photoy {
 namespace {
-
-/// Wraps the compiled adjustments as the per-pixel step the converter takes.
-struct AdjustStep {
-  const CompiledAdjustments& adjustments;
-  void operator()(float& r, float& g, float& b) const noexcept { adjustments.Apply(r, g, b); }
-};
-
-/// Converts into the target space, with the adjustments fused into the pass.
-template <typename Out>
-TImageBuffer<Out> ConvertFor(const Image16& working, const EncodeOptions& options,
-                             const CancellationTokenPtr& token) {
-  TImageBuffer<Out> result = TImageBuffer<Out>::Create(working.width(), working.height());
-  if (options.adjustments.IsNeutral()) {
-    color::ConvertBanded(working, result, options.space, token, color::NoPreProcess{});
-    return result;
-  }
-  const CompiledAdjustments compiled(options.adjustments);
-  color::ConvertBanded(working, result, options.space, token, AdjustStep{compiled});
-  return result;
-}
 
 /// Only PNG and TIFF can carry more than 8 bits per channel.
 bool FormatSupportsSixteenBit(ImageFormat format) noexcept {
@@ -57,10 +38,10 @@ std::vector<std::uint8_t> Encode(const Image16& working, const EncodeOptions& op
   // The colour conversion happens here rather than inside each encoder, so
   // there is exactly one place where working-space pixels become file pixels.
   if (options.prefer_sixteen_bit && FormatSupportsSixteenBit(options.format)) {
-    const Image16 output = ConvertFor<std::uint16_t>(working, options, token);
+    const Image16 output = ComposeToOutput16(working, options.layers, options.space, token);
     return EncodeFormat(OutputImage::From(output), options);
   }
-  const Image8 output = ConvertFor<std::uint8_t>(working, options, token);
+  const Image8 output = ComposeToOutput8(working, options.layers, options.space, token);
   return EncodeFormat(OutputImage::From(output), options);
 }
 

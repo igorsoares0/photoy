@@ -1,5 +1,7 @@
 #include "edit/edit_stack.h"
 
+#include <algorithm>
+
 namespace photoy {
 
 const Operation& EditStack::Apply(Operation operation, bool replace_top) {
@@ -35,6 +37,14 @@ bool EditStack::Redo() noexcept {
 void EditStack::Clear() noexcept {
   operations_.clear();
   cursor_ = 0;
+}
+
+void EditStack::Load(std::vector<Operation> operations, std::size_t cursor) {
+  operations_ = std::move(operations);
+  cursor_ = std::min(cursor, operations_.size());
+  // Identifiers are handed out fresh; nothing outside holds one across a load.
+  next_id_ = 1;
+  for (Operation& operation : operations_) operation.id = next_id_++;
 }
 
 std::vector<Operation> EditStack::Active() const {

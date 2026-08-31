@@ -38,6 +38,14 @@ struct Document {
   std::uint64_t file_size = 0;
   /// EXIF from the source, kept so an export can carry it forward.
   ExifBlob exif;
+  /**
+   * The file's own bytes.
+   *
+   * Kept so that saving a project can embed the original without going back to
+   * disk - the file may have been moved, renamed or deleted since. The cost is
+   * small next to the working buffer, which is already eight bytes a pixel.
+   */
+  std::vector<std::uint8_t> source_bytes;
   /// True when the file carried a usable ICC profile rather than being assumed sRGB.
   bool tagged = false;
   /// Description of the source profile, for the UI. Empty when untagged.
@@ -79,6 +87,12 @@ class DocumentStore {
   /// Decodes `utf8_path` and registers the result. Throws EngineException on
   /// any read or decode failure.
   std::shared_ptr<Document> Open(const std::string& utf8_path);
+
+  /// Registers a document from bytes already in hand, as when a project is
+  /// opened and the original comes out of the container rather than the disk.
+  std::shared_ptr<Document> OpenFromMemory(std::vector<std::uint8_t> bytes,
+                                           const std::string& file_name,
+                                           const std::string& origin_path);
 
   /// Throws EngineException when the id is unknown, which is always a host bug.
   std::shared_ptr<Document> Get(const std::string& id) const;

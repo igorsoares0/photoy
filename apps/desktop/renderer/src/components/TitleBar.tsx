@@ -15,6 +15,9 @@ export function TitleBar({ onExport }: { onExport: () => void }): React.JSX.Elem
   const undo = useEditor((state) => state.undo);
   const redo = useEditor((state) => state.redo);
   const resetEdits = useEditor((state) => state.resetEdits);
+  const projectPath = useEditor((state) => state.projectPath);
+  const dirty = useEditor((state) => state.dirty);
+  const saveProject = useEditor((state) => state.saveProject);
 
   return (
     <header
@@ -40,11 +43,29 @@ export function TitleBar({ onExport }: { onExport: () => void }): React.JSX.Elem
         Photoy
       </span>
 
+      {/* The project's name when there is one, the photograph's when there is
+          not — and a dot for work the saved file does not yet contain. */}
       <span
-        className="truncate"
+        className="flex min-w-0 items-center gap-2"
         style={{ fontSize: 'var(--text-emphasis)', color: 'var(--fg-muted)' }}
       >
-        {document?.image.fileName ?? ''}
+        <span className="truncate">
+          {projectPath !== null
+            ? (projectPath.split(/[\\/]/).pop() ?? '')
+            : (document?.image.fileName ?? '')}
+        </span>
+        {dirty && document !== null ? (
+          <span
+            title="Há alterações não salvas"
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: 'var(--radius-round)',
+              background: 'var(--fg-faint)',
+              flex: 'none',
+            }}
+          />
+        ) : null}
       </span>
 
       <div
@@ -64,6 +85,13 @@ export function TitleBar({ onExport }: { onExport: () => void }): React.JSX.Elem
         <span style={{ width: 1, height: 18, background: 'var(--border-quiet)' }} />
         <Button height={30} onClick={() => void openDialog()} disabled={busy === 'opening'}>
           Abrir
+        </Button>
+        <Button
+          height={30}
+          onClick={() => void saveProject()}
+          disabled={document === null || busy !== null}
+        >
+          Salvar
         </Button>
         <Button
           height={30}
