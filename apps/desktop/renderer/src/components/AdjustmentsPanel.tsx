@@ -8,6 +8,7 @@ import { LayersPanel } from './LayersPanel';
 import { TabBar } from './TabBar';
 import { MaskPanel } from './MaskPanel';
 import { MattePanel } from './MattePanel';
+import { ResizePanel } from './ResizePanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
 
@@ -149,6 +150,7 @@ export function AdjustmentsPanel(): React.JSX.Element {
             className="flex flex-1 flex-col overflow-y-auto"
             style={{ padding: 'var(--pad-panel)', gap: 'var(--gap-group)' }}
           >
+            <ResizePanel />
             <LayersPanel />
             {matteLayer !== null ? (
               <MattePanel layer={matteLayer} />

@@ -16,6 +16,7 @@ enum class OperationKind {
   kFlipHorizontal,
   kFlipVertical,
   kCrop,
+  kResize,
   kAdjust,
   kAddLayer,
   kRemoveLayer,
@@ -68,6 +69,9 @@ struct Operation {
   /// kSetLayerDecontaminate also travels in `amount`.
   /// kSetLayerMask: where the layer applies.
   Mask mask;
+  /// kResize: the size the document should have from here on.
+  int target_width = 0;
+  int target_height = 0;
 
   /// Stable identifier, assigned on apply, so the host can address history entries.
   std::uint64_t id = 0;
@@ -88,7 +92,20 @@ struct Geometry {
   Rect source_rect;
   /// Orientation to apply after the crop.
   Orientation orientation = Orientation::kTopLeft;
+  /**
+   * Size a resize asked for, in output coordinates. Zero means the natural one.
+   *
+   * Kept separate from `source_rect` because the rect says which pixels survive
+   * and this says how many pixels they become - two questions that a crop and a
+   * resize answer independently, and that have to stay independent for the
+   * stack to replay in any order.
+   */
+  int target_width = 0;
+  int target_height = 0;
 
+  /// Size of the crop under the orientation, before any resize.
+  int NaturalWidth() const noexcept;
+  int NaturalHeight() const noexcept;
   /// Size of the rendered result at full resolution.
   int OutputWidth() const noexcept;
   int OutputHeight() const noexcept;

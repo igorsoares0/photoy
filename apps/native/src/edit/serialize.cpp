@@ -10,6 +10,15 @@ namespace {
 using nlohmann::json;
 using json_util::OptionalFloat;
 using json_util::OptionalInt;
+
+/**
+ * Largest side a resize may ask for.
+ *
+ * 30000 squared at 8 bytes a pixel is 7 GB, so this is not a generous limit -
+ * it is the point past which the honest answer is a refusal rather than an
+ * allocation failure halfway through an export.
+ */
+constexpr int kMaxResize = 30000;
 using json_util::RequireInt;
 using json_util::RequireString;
 
@@ -119,6 +128,10 @@ json ToJson(const Operation& operation) {
       entry["color"] = json{{"r", operation.color.r}, {"g", operation.color.g},
                             {"b", operation.color.b}};
       break;
+    case OperationKind::kResize:
+      entry["width"] = operation.target_width;
+      entry["height"] = operation.target_height;
+      break;
     case OperationKind::kSetLayerDecontaminate:
       entry["layerId"] = operation.target_layer;
       entry["decontaminate"] = operation.amount;
@@ -191,6 +204,14 @@ Operation FromJson(const json& value) {
     operation.color.r = std::clamp(OptionalFloat(c, "r", 1.0f), 0.0f, 1.0f);
     operation.color.g = std::clamp(OptionalFloat(c, "g", 1.0f), 0.0f, 1.0f);
     operation.color.b = std::clamp(OptionalFloat(c, "b", 1.0f), 0.0f, 1.0f);
+    return operation;
+  }
+  if (kind == "resize") {
+    operation.kind = OperationKind::kResize;
+    // Clamped rather than trusted: the target is what the export allocates, and
+    // an absurd one is a memory failure rather than a picture.
+    operation.target_width = std::clamp(OptionalInt(value, "width", 0), 1, kMaxResize);
+    operation.target_height = std::clamp(OptionalInt(value, "height", 0), 1, kMaxResize);
     return operation;
   }
   if (kind == "setLayerDecontaminate") {

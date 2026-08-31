@@ -11,6 +11,7 @@ export type OperationKind =
   | 'flipHorizontal'
   | 'flipVertical'
   | 'crop'
+  | 'resize'
   | 'adjust'
   | 'addLayer'
   | 'removeLayer'
@@ -206,6 +207,19 @@ export interface AddLayerOperation {
   layerKind?: LayerKind;
 }
 
+/**
+ * An explicit output size.
+ *
+ * Non-destructive like every other transformation: the source keeps all its
+ * pixels and this says how many they become on the way out, so it can be undone
+ * or changed without the photograph having been resampled twice.
+ */
+export interface ResizeOperation {
+  kind: 'resize';
+  width: number;
+  height: number;
+}
+
 export interface SetLayerDecontaminateOperation {
   kind: 'setLayerDecontaminate';
   layerId: number;
@@ -244,6 +258,7 @@ export type Operation =
   | AddLayerOperation
   | SetLayerFillOperation
   | SetLayerDecontaminateOperation
+  | ResizeOperation
   | LayerOperation;
 
 /** An operation as it comes back from the engine, with its assigned id. */
@@ -264,4 +279,13 @@ export interface EditHistory {
   /** Size the stack currently produces, which is what the viewport fits to. */
   width: number;
   height: number;
+  /**
+   * Size the crop and the orientation alone produce, before any resize.
+   *
+   * A raster mask belongs to this rather than to `width`/`height`: a resize
+   * scales every pixel together and leaves the mask meaning what it meant,
+   * while a crop or a rotation moves them apart.
+   */
+  naturalWidth: number;
+  naturalHeight: number;
 }

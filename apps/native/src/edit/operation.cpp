@@ -1,6 +1,7 @@
 #include "edit/operation.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace photoy {
 namespace {
@@ -44,6 +45,7 @@ std::string Operation::KindName() const {
     case OperationKind::kFlipHorizontal: return "flipHorizontal";
     case OperationKind::kFlipVertical: return "flipVertical";
     case OperationKind::kCrop: return "crop";
+    case OperationKind::kResize: return "resize";
     case OperationKind::kAdjust: return "adjust";
     case OperationKind::kAddLayer: return "addLayer";
     case OperationKind::kRemoveLayer: return "removeLayer";
@@ -58,12 +60,20 @@ std::string Operation::KindName() const {
   return "unknown";
 }
 
-int Geometry::OutputWidth() const noexcept {
+int Geometry::NaturalWidth() const noexcept {
   return SwapsAxes(orientation) ? source_rect.height : source_rect.width;
 }
 
-int Geometry::OutputHeight() const noexcept {
+int Geometry::NaturalHeight() const noexcept {
   return SwapsAxes(orientation) ? source_rect.width : source_rect.height;
+}
+
+int Geometry::OutputWidth() const noexcept {
+  return target_width > 0 ? target_width : NaturalWidth();
+}
+
+int Geometry::OutputHeight() const noexcept {
+  return target_height > 0 ? target_height : NaturalHeight();
 }
 
 Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width,
@@ -76,6 +86,11 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
       case OperationKind::kRotate:
         geometry.orientation =
             Compose(RotateQuarters(operation.quarters), geometry.orientation);
+        // A resized size is in output coordinates, so a quarter turn carries it
+        // round with everything else.
+        if (operation.quarters % 2 != 0) {
+          std::swap(geometry.target_width, geometry.target_height);
+        }
         break;
       case OperationKind::kFlipHorizontal:
         geometry.orientation = Compose(FlipHorizontal(), geometry.orientation);
@@ -94,16 +109,44 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
       case OperationKind::kSetLayerFill:
       case OperationKind::kSetLayerDecontaminate:
         break;  // colour and compositing only; the shape is untouched
+      case OperationKind::kResize: {
+        geometry.target_width = std::max(1, operation.target_width);
+        geometry.target_height = std::max(1, operation.target_height);
+        break;
+      }
       case OperationKind::kCrop: {
         // The crop is expressed against what the user sees, so it is mapped
         // back through the accumulated orientation and then clipped to what is
-        // still left of the original.
-        const Rect in_source = MapRectBack(operation.rect, geometry.orientation,
+        // still left of the original. When a resize is in effect, what the user
+        // sees is also scaled, so the rect comes back through that first.
+        const double scale_x = geometry.target_width > 0
+                                   ? static_cast<double>(geometry.NaturalWidth()) /
+                                         geometry.target_width
+                                   : 1.0;
+        const double scale_y = geometry.target_height > 0
+                                    ? static_cast<double>(geometry.NaturalHeight()) /
+                                          geometry.target_height
+                                    : 1.0;
+        const Rect in_natural{static_cast<int>(std::lround(operation.rect.x * scale_x)),
+                              static_cast<int>(std::lround(operation.rect.y * scale_y)),
+                              std::max(1, static_cast<int>(std::lround(operation.rect.width * scale_x))),
+                              std::max(1, static_cast<int>(std::lround(operation.rect.height * scale_y)))};
+
+        const Rect in_source = MapRectBack(in_natural, geometry.orientation,
                                            geometry.source_rect.width, geometry.source_rect.height);
         const Rect shifted{in_source.x + geometry.source_rect.x,
                            in_source.y + geometry.source_rect.y, in_source.width,
                            in_source.height};
         geometry.source_rect = Intersect(shifted, geometry.source_rect);
+
+        // A crop takes a smaller piece of the picture; it does not change how
+        // big a pixel is. Holding the resample ratio is what keeps that true.
+        if (geometry.target_width > 0) {
+          geometry.target_width =
+              std::max(1, static_cast<int>(std::lround(geometry.NaturalWidth() / scale_x)));
+          geometry.target_height =
+              std::max(1, static_cast<int>(std::lround(geometry.NaturalHeight() / scale_y)));
+        }
         break;
       }
     }

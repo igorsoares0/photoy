@@ -9,6 +9,7 @@ import { run as runProjects } from './project.mjs';
 import { run as runMasks } from './masks.mjs';
 import { run as runAi } from './ai.mjs';
 import { run as runBackground } from './background.mjs';
+import { run as runResize } from './resize.mjs';
 import { run as runGeometry } from '../renderer/viewport.mjs';
 
 /**
@@ -21,7 +22,7 @@ import { run as runGeometry } from '../renderer/viewport.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runProjects, runJobs, runGeometry]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runProjects, runJobs, runGeometry]) {
   failures += await suite();
 }
 

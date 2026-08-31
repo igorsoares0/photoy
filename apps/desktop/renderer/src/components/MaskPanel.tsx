@@ -1,6 +1,6 @@
 import type { Layer, Mask, MaskKind } from '@photoy/types';
 import { NO_MASK, isMaskStale } from '@photoy/types';
-import { renderedSize, useEditor } from '../store/editor';
+import { useEditor } from '../store/editor';
 import { formatDecimal, formatInteger } from '../lib/format';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
@@ -23,8 +23,10 @@ export function MaskPanel({ layer }: { layer: Layer }): React.JSX.Element {
   const setLayerMask = useEditor((state) => state.setLayerMask);
   const segmentIntoMask = useEditor((state) => state.segmentIntoMask);
   const segmenting = useEditor((state) => state.busy === 'segmenting');
-  const documentWidth = useEditor((state) => renderedSize(state)?.width ?? 0);
-  const documentHeight = useEditor((state) => renderedSize(state)?.height ?? 0);
+  // The natural size, not the rendered one: a resize must not make a mask look
+  // stale, because it scales every pixel under the mask together.
+  const documentWidth = useEditor((state) => state.history?.naturalWidth ?? 0);
+  const documentHeight = useEditor((state) => state.history?.naturalHeight ?? 0);
   const mask = layer.mask;
   const stale = isMaskStale(mask, documentWidth, documentHeight);
 

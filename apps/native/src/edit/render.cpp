@@ -163,8 +163,8 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
   const bool needs_resize = resample_width != plan.geometry.source_rect.width ||
                             resample_height != plan.geometry.source_rect.height;
   Image16 region =
-      needs_resize ? DownscaleBox(source, plan.geometry.source_rect, resample_width,
-                                  resample_height, token)
+      needs_resize ? ResampleTo(source, plan.geometry.source_rect, resample_width,
+                                resample_height, token)
                    : CopyRegion(source, plan.geometry.source_rect, token);
 
   // Most documents are upright. Calling ApplyOrientation anyway would clone a
@@ -190,14 +190,25 @@ Image16 RenderFull(const Image16& source, const std::vector<Operation>& operatio
   const Geometry geometry = FoldGeometry(operations, source.width(), source.height());
   EnsureRenderable(geometry);
 
-  const bool untouched = geometry.orientation == Orientation::kTopLeft &&
+  // A resize is expressed in output coordinates, so the resample runs before
+  // the rotation and the axes swap back for it, exactly as in the preview.
+  const bool swap = SwapsAxes(geometry.orientation);
+  const int resample_width = swap ? geometry.OutputHeight() : geometry.OutputWidth();
+  const int resample_height = swap ? geometry.OutputWidth() : geometry.OutputHeight();
+  const bool needs_resize = resample_width != geometry.source_rect.width ||
+                            resample_height != geometry.source_rect.height;
+
+  const bool untouched = !needs_resize && geometry.orientation == Orientation::kTopLeft &&
                          geometry.source_rect.x == 0 && geometry.source_rect.y == 0 &&
                          geometry.source_rect.width == source.width() &&
                          geometry.source_rect.height == source.height();
   if (untouched) return source.Clone();
 
-  return ApplyOrientation(CopyRegion(source, geometry.source_rect, token), geometry.orientation,
-                          token);
+  Image16 region = needs_resize ? ResampleTo(source, geometry.source_rect, resample_width,
+                                             resample_height, token)
+                                : CopyRegion(source, geometry.source_rect, token);
+  if (geometry.orientation == Orientation::kTopLeft) return region;
+  return ApplyOrientation(region, geometry.orientation, token);
 }
 
 }  // namespace photoy

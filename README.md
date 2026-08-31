@@ -186,7 +186,12 @@ hoje:
   cor e a extensão do halo, mas nenhum dos dois recupera fio de cabelo: para isso é preciso
   matting de verdade, que olha a fotografia e não só a máscara.
 - **Faltam os ajustes que a §9 lista além destes**: matiz, vibração, nitidez, clareza,
-  vinheta e grão. E `resize`, o único item do M2 ainda em aberto.
+  vinheta e grão.
+- **Aumentar usa bilinear**, que interpola mas não inventa nitidez. Um aumento grande fica
+  macio, e é assim que deve ficar: o upscale que reconstrói detalhe é o item de IA do M5.
+- **Um resize que reduz um eixo e aumenta o outro alia o eixo reduzido**, porque nesse caso
+  os dois passam pela bilinear. É um resize deliberadamente distorcido; separar o filtro por
+  eixo resolveria, e ainda não pagou o próprio custo.
 - **Jobs reportam estado, não porcentagem.** `queued → running → completed/cancelled/failed`
   chega como evento, mas nenhuma operação de hoje sabe reportar uma fração real, e o style
   guide proíbe inventar uma. As porcentagens entram junto com as operações que sabem medi-las.
@@ -325,6 +330,43 @@ amostrar com passo em vez de ler todo pixel — a grade tem 192 células, ler
 milhões de pixels para preenchê-la era desperdício. Vale registrar que otimizei o
 passo errado primeiro: só medindo com borda fina e com borda larga separadamente
 é que ficou claro onde o tempo estava.
+
+### Tamanho
+
+`resize` é uma transformação como o crop e a rotação, não uma opção de
+exportação: entra na pilha, desfaz, e a fotografia embaixo continua com todos os
+pixels com que chegou. Por isso `Geometry` carrega duas coisas separadas — o
+`source_rect` diz **quais** pixels sobrevivem e o `target` diz em **quantos** eles
+se transformam. São perguntas independentes, e precisam continuar independentes
+para a pilha poder ser reproduzida em qualquer ordem.
+
+Daí saem três comportamentos que valem registro, cada um com teste:
+
+- **Um quarto de volta leva o tamanho junto.** O tamanho pedido está em
+  coordenadas de saída, então girar 90° troca largura por altura.
+- **Um crop depois de um resize mantém a escala.** Recortar pega um pedaço menor
+  da fotografia; não muda o tamanho de um pixel. O retângulo do crop vem
+  expresso no que o usuário vê, então volta pela escala do resize antes de
+  virar coordenadas da origem, e o `target` é recalculado para segurar a razão.
+- **Reduzir usa filtro de caixa, aumentar usa bilinear.** Um filtro de caixa média
+  os pixels de origem sob cada pixel de destino — aumentando existe no máximo um
+  deles, e o resultado seria vizinho-mais-próximo. Tem teste com uma borda dura,
+  porque num gradiente de 8 bits os degraus interpolados quantizam de volta em
+  repetições e o teste não distinguiria nada.
+
+Um resize também expôs um erro que já estava plantado: **uma máscara raster estava
+amarrada ao tamanho de saída**. Como um resize muda esse tamanho, redimensionar
+depois de remover o fundo teria feito a remoção desaparecer calada. A máscara
+pertence à *geometria* — recorte e orientação —, não ao tamanho de saída: um
+resize escala todos os pixels juntos e deixa a máscara significando o que
+significava, enquanto um crop ou uma rotação os afasta. Por isso `edit.history`
+reporta `naturalWidth`/`naturalHeight` além de `width`/`height`, e é contra
+aqueles que a obsolescência é medida. Há teste dos dois lados: sobrevive a um
+resize, não sobrevive a um crop.
+
+A estimativa de memória da exportação passou a dobrar a pilha em vez de olhar o
+arquivo, porque quem decide o tamanho do export agora é o resize e não o decode —
+dimensionar pelo arquivo admitiria na fila um job que a máquina não segura.
 
 ### O projeto
 

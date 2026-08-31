@@ -107,6 +107,12 @@ export function describeHistory(entries: HistoryEntry[]): HistoryRow[] {
         return { id, label: 'Mistura', detail: entry.blend ?? 'normal' };
       case 'setLayerMask':
         return { id, label: MASK_LABELS[entry.mask?.kind ?? 'none'] ?? 'Máscara', detail: null };
+      case 'resize':
+        return {
+          id,
+          label: 'Tamanho',
+          detail: formatDimensions(entry.width ?? 0, entry.height ?? 0),
+        };
       case 'setLayerFill':
         return {
           id,

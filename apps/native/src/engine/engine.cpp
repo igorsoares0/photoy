@@ -119,7 +119,13 @@ json DescribeHistory(const Document& document) {
               {"canUndo", document.stack.CanUndo()},
               {"canRedo", document.stack.CanRedo()},
               {"width", geometry.OutputWidth()},
-              {"height", geometry.OutputHeight()}};
+              {"height", geometry.OutputHeight()},
+              // The size the crop and the orientation alone produce. A raster
+              // mask belongs to this, not to the output size: a resize scales
+              // every pixel together and leaves the mask meaning exactly what
+              // it meant, while a crop or a rotation moves them apart.
+              {"naturalWidth", geometry.NaturalWidth()},
+              {"naturalHeight", geometry.NaturalHeight()}};
 }
 
 json DescribeDocument(const Document& document) {
@@ -306,8 +312,14 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
       return std::max<std::uint64_t>(64ull * 1024 * 1024, document->source_bytes.size() * 3);
     }
     if (method == "image.export") {
-      return estimate::Export(static_cast<std::uint64_t>(document->source.width()),
-                              static_cast<std::uint64_t>(document->source.height()));
+      // The stack decides how big the export is, not the file: a resize can ask
+      // for more pixels than were decoded, and sizing this from the source
+      // would admit a job the machine cannot hold.
+      const Geometry geometry = FoldGeometry(document->ActiveOperations(),
+                                             document->source.width(), document->source.height());
+      return estimate::Export(
+          std::max<std::uint64_t>(document->source.width(), geometry.OutputWidth()),
+          std::max<std::uint64_t>(document->source.height(), geometry.OutputHeight()));
     }
     const auto width = static_cast<std::uint64_t>(
         OptionalInt(params, "maxWidth", document->source.width()));
@@ -330,7 +342,7 @@ nlohmann::json Engine::Describe() const {
               {"encodeFormats", json::array({"jpeg", "png", "tiff", "webp"})},
               {"outputSpaces", json::array({"srgb", "display-p3", "adobe-rgb"})},
               {"operations",
-               json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "adjust",
+               json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "resize", "adjust",
                             "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",
                             "setLayerOpacity", "setLayerBlend", "setLayerMask",
                             "setLayerFill", "setLayerDecontaminate"})},
@@ -470,11 +482,13 @@ FittedMasks Engine::FitMasks(Document& document, const PreviewPlan& plan,
   FittedMasks fitted;
   for (const Layer& layer : layers) {
     if (layer.mask.kind != MaskKind::kRaster || layer.mask.raster == 0) continue;
-    // A raster made for a different document size no longer lines up with the
-    // pixels underneath it. Leaving it out is the honest answer; stretching it
-    // would be quietly wrong.
-    if (layer.mask.raster_width != plan.document_width ||
-        layer.mask.raster_height != plan.document_height) {
+    // A raster made against a different crop or orientation no longer lines up
+    // with the pixels underneath it. Leaving it out is the honest answer;
+    // stretching it would be quietly wrong. A resize is not that case: it
+    // scales everything together, and the mask is resampled to the render size
+    // regardless, so it is measured against the natural size.
+    if (layer.mask.raster_width != plan.geometry.NaturalWidth() ||
+        layer.mask.raster_height != plan.geometry.NaturalHeight()) {
       continue;
     }
     if (fitted.count(layer.mask.raster) != 0) continue;
@@ -510,10 +524,12 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
   const std::uint64_t raster = document->StoreMask(std::move(mask));
   log::Info("segmented " + document->id + " into mask " + std::to_string(raster));
 
+  // Reported as the natural size, which is what the mask is tied to: a later
+  // resize must not make it look stale.
   return MakeSuccess(id, json{{"documentId", document->id},
                               {"raster", raster},
-                              {"width", plan.document_width},
-                              {"height", plan.document_height}});
+                              {"width", plan.geometry.NaturalWidth()},
+                              {"height", plan.geometry.NaturalHeight()}});
 }
 
 protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
