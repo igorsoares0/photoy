@@ -46,6 +46,12 @@ json DescribeAdjustments(const Adjustments& a) {
   return json{{"exposure", a.exposure},     {"brightness", a.brightness},
               {"contrast", a.contrast},     {"highlights", a.highlights},
               {"shadows", a.shadows},       {"saturation", a.saturation},
+              {"vibrance", a.vibrance},
+              {"hue", a.hue},
+              {"vignette", a.vignette},
+              {"grain", a.grain},
+              {"sharpen", a.sharpen},
+              {"clarity", a.clarity},
               {"temperature", a.temperature}};
 }
 
@@ -694,7 +700,7 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
   const std::vector<Layer> layers = FoldLayers(operations);
   Image8 pixels = ComposeToOutput8(*base, layers, FitMasks(*document, plan, layers),
                                    FitPatches(*document, plan, layers), color::OutputSpace::kSrgb,
-                                   token);
+                                   token, false, plan.scale);
 
   if (log::Enabled(log::Level::kDebug)) {
     const double elapsed = std::chrono::duration<double, std::milli>(

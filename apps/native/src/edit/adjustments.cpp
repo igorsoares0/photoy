@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include "color/primaries.h"
 
@@ -55,25 +56,89 @@ double TemperatureFor(float slider) noexcept {
   return kNeutral * std::pow(2.0, -static_cast<double>(slider) / 100.0);
 }
 
+/**
+ * A hue rotation that leaves greys grey and luminance where it was.
+ *
+ * The rotation itself is Rodrigues about the neutral axis, which is what makes
+ * a grey stay grey exactly rather than nearly. That alone moves luminance for
+ * saturated colours, so it is corrected by a rank-one update: with weights that
+ * sum to one, `R + 1 (w^T (I - R))` rotates exactly as R does while leaving
+ * `w . x` untouched for every x - and it is still a matrix, so it folds into
+ * the same premultiply as exposure and white balance and costs nothing extra.
+ */
+Mat3 HueRotation(float degrees, const float weights[3]) noexcept {
+  const double angle = static_cast<double>(degrees) * 3.14159265358979323846 / 180.0;
+  const double c = std::cos(angle);
+  const double s = std::sin(angle);
+  // Rodrigues about (1,1,1)/sqrt(3).
+  const double a = (1.0 - c) / 3.0;
+  const double d = s / std::sqrt(3.0);
+  Mat3 rotation;
+  rotation.m[0] = c + a;      rotation.m[1] = a - d;      rotation.m[2] = a + d;
+  rotation.m[3] = a + d;      rotation.m[4] = c + a;      rotation.m[5] = a - d;
+  rotation.m[6] = a - d;      rotation.m[7] = a + d;      rotation.m[8] = c + a;
+
+  Mat3 corrected;
+  for (int column = 0; column < 3; ++column) {
+    // The column of w^T (I - R): how much luminance this input channel loses.
+    double lost = weights[column];
+    for (int row = 0; row < 3; ++row) lost -= weights[row] * rotation.m[row * 3 + column];
+    for (int row = 0; row < 3; ++row) {
+      corrected.m[row * 3 + column] = rotation.m[row * 3 + column] + lost;
+    }
+  }
+  return corrected;
+}
+
+/// A deterministic hash, so the same render twice is the same picture.
+std::uint32_t Hash(std::uint32_t x, std::uint32_t y) noexcept {
+  std::uint32_t h = x * 0x9E3779B1u ^ y * 0x85EBCA77u;
+  h ^= h >> 15;
+  h *= 0x2C1B3C6Du;
+  h ^= h >> 12;
+  h *= 0x297A2D39u;
+  h ^= h >> 15;
+  return h;
+}
+
 }  // namespace
 
 bool Adjustments::IsNeutral() const noexcept {
   return exposure == 0.0f && brightness == 0.0f && contrast == 0.0f && highlights == 0.0f &&
-         shadows == 0.0f && saturation == 0.0f && temperature == 0.0f;
+         shadows == 0.0f && saturation == 0.0f && vibrance == 0.0f && hue == 0.0f &&
+         vignette == 0.0f && grain == 0.0f && sharpen == 0.0f && clarity == 0.0f &&
+         temperature == 0.0f;
 }
 
 bool Adjustments::operator==(const Adjustments& other) const noexcept {
   return exposure == other.exposure && brightness == other.brightness &&
          contrast == other.contrast && highlights == other.highlights &&
          shadows == other.shadows && saturation == other.saturation &&
+         vibrance == other.vibrance && hue == other.hue && vignette == other.vignette &&
+         grain == other.grain && sharpen == other.sharpen && clarity == other.clarity &&
          temperature == other.temperature;
 }
 
 CompiledAdjustments::CompiledAdjustments() = default;
 
-CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments) {
+CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments, int width, int height,
+                                         double scale) {
   neutral_ = adjustments.IsNeutral();
   if (neutral_) return;
+
+  if (width > 0 && height > 0) {
+    centre_x_ = static_cast<float>(width) * 0.5f;
+    centre_y_ = static_cast<float>(height) * 0.5f;
+    inverse_half_width_ = 1.0f / centre_x_;
+    inverse_half_height_ = 1.0f / centre_y_;
+    vignette_ = adjustments.vignette / 100.0f;
+    // Amplitude falls with the scale because a reduction averages grain away:
+    // a preview at a quarter size shows a quarter of it, which is what the
+    // export would look like reduced to that size.
+    grain_ = std::clamp(adjustments.grain, 0.0f, 100.0f) / 100.0f *
+             static_cast<float>(std::clamp(scale, 0.0, 1.0));
+    to_document_ = scale > 0.0 ? static_cast<float>(1.0 / scale) : 1.0f;
+  }
 
   // Luminance weights are the Y row of the working space's own RGB-to-XYZ
   // matrix. Using Rec.709 weights here would desaturate towards the wrong grey.
@@ -90,11 +155,16 @@ CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments) {
     pre = color::Adapt(color::kWorkingSpace.white,
                        DaylightWhite(TemperatureFor(adjustments.temperature)));
   }
+  if (adjustments.hue != 0.0f) {
+    pre = color::Multiply(HueRotation(adjustments.hue, luma_), pre);
+  }
   const double gain = std::pow(2.0, static_cast<double>(adjustments.exposure));
   for (int i = 0; i < 9; ++i) premultiply_[i] = static_cast<float>(pre.m[i] * gain);
-  premultiply_is_identity_ = adjustments.temperature == 0.0f && adjustments.exposure == 0.0f;
+  premultiply_is_identity_ = adjustments.temperature == 0.0f && adjustments.exposure == 0.0f &&
+                             adjustments.hue == 0.0f;
 
   saturation_ = 1.0f + adjustments.saturation / 100.0f;
+  vibrance_ = adjustments.vibrance / 100.0f;
 
   tone_is_identity_ = adjustments.brightness == 0.0f && adjustments.contrast == 0.0f &&
                       adjustments.highlights == 0.0f && adjustments.shadows == 0.0f;
@@ -158,7 +228,7 @@ float CompiledAdjustments::Tone(float value) const noexcept {
   return low + (high - low) * fraction;
 }
 
-void CompiledAdjustments::Apply(float& r, float& g, float& b) const noexcept {
+void CompiledAdjustments::Apply(float& r, float& g, float& b, int x, int y) const noexcept {
   if (neutral_) return;
 
   if (!premultiply_is_identity_) {
@@ -179,6 +249,54 @@ void CompiledAdjustments::Apply(float& r, float& g, float& b) const noexcept {
     r = luma + (r - luma) * saturation_;
     g = luma + (g - luma) * saturation_;
     b = luma + (b - luma) * saturation_;
+  }
+
+  if (vibrance_ != 0.0f) {
+    const float luma = luma_[0] * r + luma_[1] * g + luma_[2] * b;
+    const float highest = std::max({r, g, b});
+    const float lowest = std::min({r, g, b});
+    // How far this pixel already is from grey, relative to its own brightness.
+    // A pixel that is already vivid gets almost nothing; a flat one gets it all.
+    // Unlike Lightroom's, this weight does not single out skin tones - doing
+    // that needs a hue-dependent term, and tuning one without photographs of
+    // people to check it against would be guessing.
+    const float current = highest > 1.0e-4f ? (highest - lowest) / highest : 0.0f;
+    const float factor = 1.0f + vibrance_ * (1.0f - std::clamp(current, 0.0f, 1.0f));
+    r = luma + (r - luma) * factor;
+    g = luma + (g - luma) * factor;
+    b = luma + (b - luma) * factor;
+  }
+
+  if (vignette_ != 0.0f) {
+    // An ellipse that touches the frame, normalised so a corner sits at one.
+    const float dx = (static_cast<float>(x) + 0.5f - centre_x_) * inverse_half_width_;
+    const float dy = (static_cast<float>(y) + 0.5f - centre_y_) * inverse_half_height_;
+    const float distance = std::sqrt(dx * dx + dy * dy) * 0.70710678f;
+    // A multiply in linear light, because that is what a lens actually does to
+    // the light reaching the corners of the frame.
+    const float gain = 1.0f + vignette_ * SmoothStep(0.25f, 1.0f, distance);
+    r *= gain;
+    g *= gain;
+    b *= gain;
+  }
+
+  if (grain_ > 0.0f) {
+    // Sampled in document coordinates, so the grain belongs to the photograph
+    // rather than to the zoom it is being looked at.
+    const auto dx = static_cast<std::uint32_t>(static_cast<float>(x) * to_document_);
+    const auto dy = static_cast<std::uint32_t>(static_cast<float>(y) * to_document_);
+    const float noise = static_cast<float>(Hash(dx, dy)) * (2.0f / 4294967296.0f) - 1.0f;
+
+    // Grain is least visible in the blacks and in a blown highlight, so the
+    // amplitude follows a midtone weight. The constant below is a first pass:
+    // it is the part of this to tune against real photographs.
+    const float luma = luma_[0] * r + luma_[1] * g + luma_[2] * b;
+    const float e = std::clamp(Encode(luma), 0.0f, 1.0f);
+    const float weight = 4.0f * e * (1.0f - e);
+    const float amplitude = noise * grain_ * weight * 0.06f;
+    r = std::max(0.0f, r + amplitude);
+    g = std::max(0.0f, g + amplitude);
+    b = std::max(0.0f, b + amplitude);
   }
 }
 

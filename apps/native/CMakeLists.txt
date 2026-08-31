@@ -37,6 +37,7 @@ add_executable(photoy-engine
   src/edit/mask.cpp
   src/edit/decontaminate.cpp
   src/edit/patch.cpp
+  src/edit/detail.cpp
   src/edit/operation.cpp
   src/edit/edit_stack.cpp
   src/edit/render.cpp

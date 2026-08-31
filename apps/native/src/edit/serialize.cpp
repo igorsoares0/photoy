@@ -26,6 +26,12 @@ json AdjustmentsToJson(const Adjustments& a) {
   return json{{"exposure", a.exposure},     {"brightness", a.brightness},
               {"contrast", a.contrast},     {"highlights", a.highlights},
               {"shadows", a.shadows},       {"saturation", a.saturation},
+              {"vibrance", a.vibrance},
+              {"hue", a.hue},
+              {"vignette", a.vignette},
+              {"grain", a.grain},
+              {"sharpen", a.sharpen},
+              {"clarity", a.clarity},
               {"temperature", a.temperature}};
 }
 
@@ -38,6 +44,12 @@ Adjustments AdjustmentsFromJson(const json& value) {
   a.highlights = std::clamp(OptionalFloat(v, "highlights", 0.0f), -100.0f, 100.0f);
   a.shadows = std::clamp(OptionalFloat(v, "shadows", 0.0f), -100.0f, 100.0f);
   a.saturation = std::clamp(OptionalFloat(v, "saturation", 0.0f), -100.0f, 100.0f);
+  a.vibrance = std::clamp(OptionalFloat(v, "vibrance", 0.0f), -100.0f, 100.0f);
+  a.hue = std::clamp(OptionalFloat(v, "hue", 0.0f), -180.0f, 180.0f);
+  a.vignette = std::clamp(OptionalFloat(v, "vignette", 0.0f), -100.0f, 100.0f);
+  a.grain = std::clamp(OptionalFloat(v, "grain", 0.0f), 0.0f, 100.0f);
+  a.sharpen = std::clamp(OptionalFloat(v, "sharpen", 0.0f), 0.0f, 100.0f);
+  a.clarity = std::clamp(OptionalFloat(v, "clarity", 0.0f), -100.0f, 100.0f);
   a.temperature = std::clamp(OptionalFloat(v, "temperature", 0.0f), -100.0f, 100.0f);
   return a;
 }

@@ -184,8 +184,6 @@ hoje:
 - **A borda continua sendo contorno, não fios.** Os níveis e a descontaminação arrumam a
   cor e a extensão do halo, mas nenhum dos dois recupera fio de cabelo: para isso é preciso
   matting de verdade, que olha a fotografia e não só a máscara.
-- **Faltam os ajustes que a §9 lista além destes**: matiz, vibração, nitidez, clareza,
-  vinheta e grão.
 - **Aumentar usa bilinear**, que interpola mas não inventa nitidez. Um aumento grande fica
   macio, e é assim que deve ficar: o upscale que reconstrói detalhe é o item de IA do M5.
 - **Um resize que reduz um eixo e aumenta o outro alia o eixo reduzido**, porque nesse caso
@@ -263,6 +261,48 @@ Máscaras geradas são pixels e vivem no diretório `masks/` do container, uma P
 em tons de cinza por máscara — em tons de cinza porque é o que uma máscara é, e
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
+
+### Os seis ajustes que faltavam
+
+Matiz, vibração, vinheta, grão, nitidez e clareza fecham a lista da §9. Eles se
+dividem em três grupos por uma razão de arquitetura, não de gosto.
+
+**Matiz é de graça.** Uma rotação de matiz é linear, e exposição e balanço de
+branco já são multiplicados numa matriz só — então matiz entra nela e não custa
+nada por pixel. A rotação em si é Rodrigues em torno do eixo neutro, que é o que
+faz um cinza continuar **exatamente** cinza em vez de quase. Isso sozinho move a
+luminância das cores saturadas, então é corrigido por uma atualização de posto
+um: com pesos que somam um, `R + 1 (w^T (I - R))` gira igual a R e deixa `w . x`
+intacto para todo x — e continua sendo uma matriz. Medido: um cinza sai idêntico,
+e uma cor dentro do gamute mantém Y em 0,2387 → 0,2385. Um primário totalmente
+saturado sai do gamute sRGB e o preview de 8 bits recorta, o que muda a
+luminância por um motivo que não tem nada a ver com a matriz.
+
+**Vibração, vinheta e grão** cabem no laço por pixel, que já recebe (x, y). A
+vibração pesa o ganho pelo quanto a cor já tem de saturação, que é o que a separa
+da saturação comum. O grão precisou de mais uma informação: a **escala do render**.
+Ele pertence à fotografia, não à tela, então é amostrado em coordenadas do
+documento e a amplitude é reduzida com a escala do jeito que uma média reduziria
+— sem isso, o grão do preview teria o tamanho errado na exportação.
+
+**Nitidez e clareza não cabem**, e é a primeira coisa neste engine que não cabe.
+As duas são a diferença entre um pixel e uma versão borrada do que o cerca, então
+precisam de uma passagem própria sobre um buffer (`edit/detail.cpp`). Uma camada
+que carrega uma delas deixa de poder ser fundida na conversão de cor. As duas
+agem só sobre luminância: afiar cada canal separadamente põe franja colorida em
+toda borda, e nenhum dos dois controles é sobre cor.
+
+Custou caro na primeira versão — **+280 ms** num quadro de 2,2 MP, triplicando o
+render. Duas medições depois:
+
+- **O `pow` por pixel era metade do custo da clareza.** O peso de meios-tons é uma
+  curva suave de uma variável; virou tabela de mil entradas.
+- **A passagem vertical do desfoque andava na memória com passo de uma linha
+  inteira.** Reescrita para carregar uma soma corrente por coluna e percorrer as
+  linhas em ordem, ela lê os dois buffers sequencialmente.
+
+Juntas: **+280 ms viraram +72 ms**. E durante um arrasto o rascunho sai em metade
+da resolução, então são cerca de 18 ms.
 
 ### O pincel de máscara
 

@@ -63,13 +63,13 @@ using FittedPatches = std::map<std::uint64_t, std::shared_ptr<const FittedPatch>
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
                         const FittedMasks& masks, const FittedPatches& patches,
                         color::OutputSpace space, const CancellationTokenPtr& token,
-                        bool flatten = false);
+                        bool flatten = false, double scale = 1.0);
 
 /// The same, at the depth a PNG or TIFF export can keep.
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
                           const FittedMasks& masks, const FittedPatches& patches,
                           color::OutputSpace space, const CancellationTokenPtr& token,
-                          bool flatten = false);
+                          bool flatten = false, double scale = 1.0);
 
 /// Evaluates the geometry at full resolution, for export.
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,

@@ -165,6 +165,20 @@ export interface Adjustments {
   highlights: number;
   shadows: number;
   saturation: number;
+  /** Saturation that spends itself on the colours that have least. */
+  vibrance: number;
+  /** Rotation of the colour wheel, in degrees. Greys stay grey. */
+  hue: number;
+  /** Negative darkens the corners, positive lightens them. */
+  vignette: number;
+  /** Film grain. There is no such thing as negative grain. */
+  grain: number;
+  /**
+   * The two that look at neighbours rather than at one pixel, so they cost a
+   * pass of their own rather than riding along with the colour conversion.
+   */
+  sharpen: number;
+  clarity: number;
   temperature: number;
 }
 
@@ -177,6 +191,12 @@ export const NEUTRAL_ADJUSTMENTS: Adjustments = {
   highlights: 0,
   shadows: 0,
   saturation: 0,
+  vibrance: 0,
+  hue: 0,
+  vignette: 0,
+  grain: 0,
+  sharpen: 0,
+  clarity: 0,
   temperature: 0,
 };
 

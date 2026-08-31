@@ -1,6 +1,6 @@
 import type { AdjustmentKey, BlendMode } from '@photoy/types';
 import { NO_LAYERS, currentAdjustments, selectedLayer, useEditor } from '../store/editor';
-import { formatSigned } from '../lib/format';
+import { formatInteger, formatSigned } from '../lib/format';
 import { useState } from 'react';
 import { CropPanel } from './CropPanel';
 import { HistoryPanel } from './HistoryPanel';
@@ -65,7 +65,28 @@ const COLOUR: Control[] = [
     step: 1,
     format: (v) => formatSigned(v),
   },
+  {
+    key: 'hue',
+    label: 'Matiz',
+    min: -180,
+    max: 180,
+    step: 1,
+    format: (v) => `${formatSigned(v)}°`,
+  },
   { key: 'saturation', label: 'Saturação', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
+  { key: 'vibrance', label: 'Vibração', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
+];
+
+/** Local contrast: the two that look at a pixel's neighbours. */
+const DETAIL: Control[] = [
+  { key: 'sharpen', label: 'Nitidez', min: 0, max: 100, step: 1, format: (v) => formatInteger(v) },
+  { key: 'clarity', label: 'Clareza', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
+];
+
+/** Effects that depend on where a pixel sits, not only on what colour it is. */
+const EFFECTS: Control[] = [
+  { key: 'vignette', label: 'Vinheta', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
+  { key: 'grain', label: 'Grão', min: 0, max: 100, step: 1, format: (v) => formatInteger(v) },
 ];
 
 function Group({ label, controls }: { label: string; controls: Control[] }): React.JSX.Element {
@@ -200,6 +221,8 @@ export function AdjustmentsPanel(): React.JSX.Element {
                 {adjustmentLayer !== null ? <MaskPanel layer={adjustmentLayer} /> : null}
                 <Group label="Luz" controls={LIGHT} />
                 <Group label="Cor" controls={COLOUR} />
+                <Group label="Detalhe" controls={DETAIL} />
+                <Group label="Efeitos" controls={EFFECTS} />
               </>
             ) : (
               <span style={{ fontSize: 'var(--text-chip)', color: 'var(--fg-numeric-idle)' }}>

@@ -17,6 +17,12 @@ const ADJUSTMENT_LABELS: Record<AdjustmentKey, string> = {
   highlights: 'Realces',
   shadows: 'Sombras',
   saturation: 'Saturação',
+  vibrance: 'Vibração',
+  hue: 'Matiz',
+  vignette: 'Vinheta',
+  grain: 'Grão',
+  sharpen: 'Nitidez',
+  clarity: 'Clareza',
   temperature: 'Temperatura',
 };
 

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "color/matrix.h"
+#include "edit/detail.h"
 #include "color/primaries.h"
 
 namespace photoy {
@@ -88,14 +89,15 @@ float Blend(BlendMode mode, float under, float over) noexcept {
 }
 
 CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster,
-                             const FittedPatch* patch)
+                             const FittedPatch* patch, double scale)
     : kind_(layer.kind),
       fill_(layer.fill),
-      adjustments_(layer.adjustments),
+      adjustments_(layer.adjustments, width, height, scale),
       mask_(layer.mask, width, height, raster),
       blend_(layer.blend),
       opacity_(std::clamp(layer.opacity, 0.0f, 1.0f)),
-      patch_(patch) {
+      patch_(patch),
+      raw_adjustments_(layer.adjustments) {
   if (kind_ == LayerKind::kPatch) {
     // A patch without its pixels - stale, or not yet generated - draws nothing
     // rather than drawing a hole.
@@ -122,11 +124,19 @@ CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const Ma
     return;
   }
 
+  // Sharpening and clarity happen in their own pass, so a layer that carries
+  // only those is not transparent even though its per-pixel work is neutral.
   // With a mask the mix varies per pixel, so the replacement shortcut is off.
   passthrough_ = blend_ == BlendMode::kNormal && opacity_ >= 1.0f && mask_.open();
   // Under a normal blend a neutral adjustment mixes a value with itself, which
   // is nothing whatever the opacity or the mask say.
   transparent_ = opacity_ <= 0.0f || (adjustments_.neutral() && blend_ == BlendMode::kNormal);
+}
+
+void CompiledLayer::ApplyDetailTo(Image16& image, double scale,
+                                  const CancellationTokenPtr& token) const {
+  if (kind_ != LayerKind::kAdjustment || opacity_ <= 0.0f) return;
+  ApplyDetail(image, raw_adjustments_, mask_, opacity_, scale, token);
 }
 
 void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept {
@@ -201,7 +211,7 @@ void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) 
   float ar = r;
   float ag = g;
   float ab = b;
-  adjustments_.Apply(ar, ag, ab);
+  adjustments_.Apply(ar, ag, ab, x, y);
 
   if (passthrough_) {
     r = ar;

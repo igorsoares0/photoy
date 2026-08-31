@@ -8,6 +8,8 @@
 #include "edit/decontaminate.h"
 #include "edit/mask.h"
 #include "edit/patch.h"
+#include "image/image_buffer.h"
+#include "jobs/cancellation.h"
 
 namespace photoy {
 
@@ -102,8 +104,10 @@ class CompiledLayer {
  public:
   /// The frame size is needed to compile the mask, which is described in
   /// fractions of the document rather than in pixels.
+  /// `scale` is how much of the document one rendered pixel covers, which the
+  /// grain needs so that it belongs to the photograph rather than to the zoom.
   CompiledLayer(const Layer& layer, int width, int height, const MaskBuffer* raster = nullptr,
-                const FittedPatch* patch = nullptr);
+                const FittedPatch* patch = nullptr, double scale = 1.0);
 
   /// True when the layer would leave every pixel exactly as it found it.
   bool transparent() const noexcept { return transparent_; }
@@ -122,6 +126,9 @@ class CompiledLayer {
 
   void Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept;
 
+  /// Runs sharpening and clarity over a buffer, before the per-pixel work.
+  void ApplyDetailTo(Image16& image, double scale, const CancellationTokenPtr& token) const;
+
  private:
   LayerKind kind_ = LayerKind::kAdjustment;
   FillKind fill_ = FillKind::kTransparent;
@@ -134,6 +141,8 @@ class CompiledLayer {
   float decontaminate_ = 0.0f;
   BackgroundEstimatePtr background_;
   const FittedPatch* patch_ = nullptr;
+  /// Kept whole for the spatial pass, which needs the amounts and not a table.
+  Adjustments raw_adjustments_;
   bool transparent_ = false;
   /// True when the mix is a plain replacement, which skips the blend entirely.
   bool passthrough_ = true;

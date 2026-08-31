@@ -5,6 +5,7 @@
 #include "color/pipeline.h"
 #include "core/error.h"
 #include "edit/decontaminate.h"
+#include "edit/detail.h"
 #include "image/resample.h"
 
 namespace photoy {
@@ -68,7 +69,8 @@ void ApplyInPlace(Image16& image, const CompiledLayer& layer, const Cancellation
 
 /// The visible layers that actually change something, bottom first.
 std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const FittedMasks& masks,
-                                   const FittedPatches& patches, int width, int height) {
+                                   const FittedPatches& patches, int width, int height,
+                                   double scale) {
   std::vector<CompiledLayer> compiled;
   for (const Layer& layer : layers) {
     if (layer.kind == LayerKind::kBackground || !layer.visible) continue;
@@ -82,7 +84,7 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
       const auto found = patches.find(layer.patch);
       if (found != patches.end()) fitted = found->second.get();
     }
-    CompiledLayer candidate(layer, width, height, raster, fitted);
+    CompiledLayer candidate(layer, width, height, raster, fitted, scale);
     if (candidate.transparent()) continue;
     compiled.push_back(std::move(candidate));
   }
@@ -93,12 +95,12 @@ template <typename Out>
 TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
                           const FittedMasks& masks, const FittedPatches& patches,
                           color::OutputSpace space, const CancellationTokenPtr& token,
-                          bool flatten) {
+                          bool flatten, double scale) {
   // Masks are described in fractions of the document, so they compile against
   // whatever resolution this render happens to be: the same mask at preview
   // size and at full size, with no downscale in between.
   std::vector<CompiledLayer> compiled =
-      Compile(layers, masks, patches, base.width(), base.height());
+      Compile(layers, masks, patches, base.width(), base.height(), scale);
   TImageBuffer<Out> result = TImageBuffer<Out>::Create(base.width(), base.height());
 
   if (compiled.empty()) {
@@ -106,23 +108,38 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
     return result;
   }
 
+  // Sharpening and clarity are passes over a buffer rather than functions of a
+  // pixel, so a layer carrying either cannot be fused into the conversion.
+  bool spatial = false;
+  for (const Layer& layer : layers) {
+    if (layer.kind == LayerKind::kAdjustment && layer.visible && !DetailIsNeutral(layer.adjustments)) {
+      spatial = true;
+    }
+  }
+
   // Only the layers below the top need a buffer of their own. Fusing the top
   // one into the conversion is what keeps the usual case - none, or one - at
   // the cost it had before layers existed.
   Image16 scratch;
   const Image16* input = &base;
-  if (compiled.size() > 1) {
+  const std::size_t fused = spatial ? compiled.size() : compiled.size() - 1;
+  if (fused > 0) {
     scratch = base.Clone();
-    for (std::size_t i = 0; i + 1 < compiled.size(); ++i) {
+    for (std::size_t i = 0; i < fused; ++i) {
       // Each estimate is built from the pixels that layer is about to see, not
       // from the original, so a matte sitting above an adjustment unmixes
       // against the background as adjusted rather than as decoded.
       if (compiled[i].wants_background()) {
         compiled[i].SetBackground(EstimateBackground(scratch, compiled[i].mask()));
       }
+      compiled[i].ApplyDetailTo(scratch, scale, token);
       ApplyInPlace(scratch, compiled[i], token);
     }
     input = &scratch;
+  }
+  if (fused == compiled.size()) {
+    color::ConvertBanded(*input, result, space, token, color::NoPreProcess{}, flatten);
+    return result;
   }
   if (compiled.back().wants_background()) {
     compiled.back().SetBackground(EstimateBackground(*input, compiled.back().mask()));
@@ -183,15 +200,15 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
 Image8 ComposeToOutput8(const Image16& base, const std::vector<Layer>& layers,
                         const FittedMasks& masks, const FittedPatches& patches,
                         color::OutputSpace space, const CancellationTokenPtr& token,
-                        bool flatten) {
-  return Compose<std::uint8_t>(base, layers, masks, patches, space, token, flatten);
+                        bool flatten, double scale) {
+  return Compose<std::uint8_t>(base, layers, masks, patches, space, token, flatten, scale);
 }
 
 Image16 ComposeToOutput16(const Image16& base, const std::vector<Layer>& layers,
                           const FittedMasks& masks, const FittedPatches& patches,
                           color::OutputSpace space, const CancellationTokenPtr& token,
-                          bool flatten) {
-  return Compose<std::uint16_t>(base, layers, masks, patches, space, token, flatten);
+                          bool flatten, double scale) {
+  return Compose<std::uint16_t>(base, layers, masks, patches, space, token, flatten, scale);
 }
 
 Image16 RenderFull(const Image16& source, const std::vector<Operation>& operations,
