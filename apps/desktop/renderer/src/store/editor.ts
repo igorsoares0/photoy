@@ -96,6 +96,14 @@ interface EditorState {
   openDialog(): Promise<void>;
   openPath(path: string): Promise<void>;
   closeDocument(): Promise<void>;
+  /**
+   * True while a slider is being dragged, between the first frame and release.
+   *
+   * The canvas renders a draft at reduced resolution while this holds and a
+   * full one when it clears, which is what keeps a drag responsive without
+   * leaving a soft picture on screen once the hand comes off.
+   */
+  interacting: boolean;
   requestPreview(targetWidth: number, targetHeight: number): Promise<void>;
 
   applyEdit(operation: Operation): Promise<void>;
@@ -178,6 +186,7 @@ async function adoptHistory(
   set: SetState,
   get: GetState,
   response: ApiResult<EditHistory>,
+  continuing = false,
 ): Promise<void> {
   if (!response.ok) {
     set({ error: response.error });
@@ -190,6 +199,9 @@ async function adoptHistory(
 
   set({
     history,
+    // Held for the canvas: mid-gesture it renders a draft, and the frame that
+    // ends the gesture is the one that gets rendered in full.
+    interacting: continuing,
     pendingAdjustments: null,
     // An adjustment changes colour without changing shape, so the counter has
     // to move even when the size did not, or the canvas would keep the old
@@ -277,6 +289,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   lastExport: null,
   fitRequest: 0,
   fitOnRequest: false,
+  interacting: false,
 
   setEngineState: (engineState) => set({ engineState }),
 
@@ -519,6 +532,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         { kind: 'setLayerOpacity', layerId: id, opacity },
         continuing,
       ),
+      continuing,
     );
   },
 
@@ -539,6 +553,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       set,
       get,
       await window.photoy.applyEdit(document.id, { kind: 'setLayerMask', layerId: id, mask }, continuing),
+      continuing,
     );
   },
 
@@ -584,6 +599,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         { kind: 'setLayerDecontaminate', layerId: id, decontaminate: amount },
         continuing,
       ),
+      continuing,
     );
   },
 
@@ -689,6 +705,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         layerId === undefined ? { kind: 'adjust', adjustments: next } : { kind: 'adjust', adjustments: next, layerId },
         continuing,
       ),
+      continuing,
     );
   },
 

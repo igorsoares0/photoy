@@ -1,22 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { renderedSize, useEditor } from '../store/editor';
+import { previewTarget } from '../lib/preview';
 
 /**
  * Above this zoom the canvas stops smoothing, so what is on screen is the
  * actual pixel grid rather than an interpolation of it.
  */
 const NEAREST_NEIGHBOUR_ABOVE = 2;
-
-/**
- * Ceiling on preview resolution, in megapixels.
- *
- * One preview is rendered for the whole image, so zooming in past this budget
- * shows a slightly soft picture instead of allocating a buffer scaled to the
- * zoom. The ceiling is low because a working-space pixel is 8 bytes: at 24 MP
- * the engine is already holding the document and building a preview beside it.
- * The tiled pipeline in milestone 4 removes the trade-off.
- */
-const PREVIEW_BUDGET_MP = 24;
 
 const PREVIEW_DEBOUNCE_MS = 180;
 
@@ -25,6 +15,9 @@ export function Canvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
   const debounceRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
+  const forceRef = useRef(false);
 
   const document = useEditor((state) => state.document);
   const documentWidth = useEditor((state) => renderedSize(state)?.width ?? 0);
@@ -66,7 +59,13 @@ export function Canvas(): React.JSX.Element {
     const left = Math.round((width - displayWidth) / 2 + viewport.offsetX);
     const top = Math.round((height - displayHeight) / 2 + viewport.offsetY);
 
-    context.imageSmoothingEnabled = viewport.scale < NEAREST_NEIGHBOUR_ABOVE;
+    // Nearest-neighbour exists to show the photograph's own pixel grid, so it
+    // only applies when the preview actually carries those pixels one for one.
+    // A draft - or any preview below document resolution - is an interpolation
+    // already, and drawing it as hard blocks would show a grid that is not the
+    // photograph's.
+    const oneToOne = preview.width >= documentWidth;
+    context.imageSmoothingEnabled = !(oneToOne && viewport.scale >= NEAREST_NEIGHBOUR_ABOVE);
     context.imageSmoothingQuality = 'high';
     context.drawImage(preview.bitmap, left, top, displayWidth, displayHeight);
 
@@ -81,38 +80,59 @@ export function Canvas(): React.JSX.Element {
     draw();
   }, [draw]);
 
-  /** Asks the engine for a preview matching the resolution now on screen. */
+  /**
+   * Renders, and renders again if the picture moved while it was rendering.
+   *
+   * A drag produces a change per pointer event, far more often than a render
+   * completes. Firing one each would queue work the engine only has to cancel;
+   * absorbing the ones that arrive mid-render into a single catch-up afterwards
+   * keeps the loop at whatever rate the machine can actually hold. Whether that
+   * catch-up is forced is tracked apart from whether one is owed, so a zoom
+   * nudge arriving mid-render is still considered rather than dropped.
+   */
+  const runPreview = useCallback(async (force: boolean) => {
+    pendingRef.current = true;
+    if (force) forceRef.current = true;
+    if (inFlightRef.current) return;
+
+    inFlightRef.current = true;
+    try {
+      while (pendingRef.current) {
+        pendingRef.current = false;
+        const forced = forceRef.current;
+        forceRef.current = false;
+
+        const state = useEditor.getState();
+        if (state.document === null) break;
+        const current = renderedSize(state);
+        if (current === null) break;
+
+        const target = previewTarget({
+          documentWidth: current.width,
+          documentHeight: current.height,
+          scale: state.viewport.scale,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          interacting: state.interacting,
+          rendered: state.preview?.width ?? 0,
+          forced,
+        });
+        if (target === null) continue;
+        await state.requestPreview(target.width, target.height);
+      }
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, []);
+
   const schedulePreview = useCallback((force = false) => {
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => {
-      const state = useEditor.getState();
-      if (state.document === null) return;
-
-      const current = renderedSize(state);
-      if (current === null) return;
-
-      const dpr = window.devicePixelRatio || 1;
-      const budget = Math.sqrt(
-        (PREVIEW_BUDGET_MP * 1_000_000 * current.width) / current.height,
-      );
-      const wanted = Math.min(
-        current.width,
-        Math.ceil(current.width * state.viewport.scale * dpr),
-        Math.round(budget),
-      );
-
-      const rendered = state.preview?.width ?? 0;
-      // Re-render only on a real change, so a nudge of the zoom does not queue
-      // a render behind every wheel tick. An edit always forces one, because
-      // the pixels changed even when the size did not.
-      if (!force && rendered > 0 && Math.abs(wanted - rendered) / Math.max(rendered, 1) < 0.1) {
-        return;
-      }
-
-      const ratio = current.height / current.width;
-      void state.requestPreview(wanted, Math.ceil(wanted * ratio));
-    }, PREVIEW_DEBOUNCE_MS);
-  }, []);
+    // Mid-gesture there is nothing to wait for: the debounce exists to stop a
+    // wheel or a window resize queueing a render per event, and a drag already
+    // has the in-flight guard for that. Leaving it in place is what made a
+    // slider update only once the hand stopped moving.
+    const delay = useEditor.getState().interacting ? 0 : PREVIEW_DEBOUNCE_MS;
+    debounceRef.current = window.setTimeout(() => void runPreview(force), delay);
+  }, [runPreview]);
 
   // Track the viewport box and refit whenever the window or the image changes.
   useEffect(() => {

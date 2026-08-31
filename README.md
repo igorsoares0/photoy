@@ -174,9 +174,8 @@ hoje:
   mais exótico cai na interface RGBA da libtiff, correta mas a 8 bits.
 - O preview é uma imagem inteira, com teto de 24 MP. Zoom muito além disso mostra a foto
   levemente macia. O pipeline em tiles do Milestone 4 remove o compromisso.
-- **Um quadro de slider custa ~31 ms**, dos quais cerca de metade é o transporte dos 3,7 MB
-  do preview pelo pipe. Dá ~32 fps. Baixar a resolução do preview durante o arrasto e subir
-  ao soltar é o próximo ganho fácil, e a API já aceita isso sem mudança.
+- **O preview inteiro é um só buffer**, com teto de 24 MP. Enquanto o arrasto usa rascunho,
+  o quadro final ainda paga o tamanho cheio; o pipeline em tiles do M4 é o que remove isso.
 - **O fundo só vira transparente ou cor.** Preencher com uma imagem ou com um desfoque
   da própria foto (§19) ainda não existe; a camada matte já tem onde guardar a escolha.
 - **A calibração dos níveis vem de uma única fotografia.** `SEGMENTED_LEVELS` foi medido
@@ -330,6 +329,38 @@ amostrar com passo em vez de ler todo pixel — a grade tem 192 células, ler
 milhões de pixels para preenchê-la era desperdício. Vale registrar que otimizei o
 passo errado primeiro: só medindo com borda fina e com borda larga separadamente
 é que ficou claro onde o tempo estava.
+
+### Latência do arrasto
+
+Um slider arrastado tinha dois problemas somados, e o menor era o que eu achava
+que era o maior.
+
+O grande era **estrutural**: cada mudança agendava o render atrás de um debounce
+de 180 ms que se reiniciava a cada evento do ponteiro. Enquanto o dedo estava se
+movendo, portanto, o canvas **não atualizava nada** — só depois de você parar. O
+debounce existe para que uma roda de mouse ou um redimensionamento de janela não
+enfileirem um render por evento; num arrasto ele estava impedindo exatamente o
+que devia acontecer. Durante um gesto o atraso passou a ser zero, e o que evita a
+enxurrada é um guarda de "um render em voo por vez, com uma repescagem depois" —
+que é o comportamento certo de qualquer jeito, porque enfileirar renders que o
+engine só vai cancelar é trabalho jogado fora.
+
+O segundo é a **resolução**. Durante o gesto o preview sai em metade da largura e
+metade da altura, o que é um quarto dos pixels e cerca de um quarto dos dois
+custos que importam: a composição e a volta pelo pipe. Medido numa foto de
+2600 × 1800, um quadro de arrasto caiu de **94,2 ms a 1800 px para 21,7 ms a
+900 px** — de 9,0 MB para 2,2 MB no transporte. O quadro que encerra o gesto é
+renderizado em tamanho cheio, então o que fica na tela nunca é o rascunho.
+
+A política de tamanho virou `previewTarget()` em `lib/preview.ts`, fora do
+componente, porque é a única decisão do laço de render e tem três motivos para
+dizer não. Tem suíte própria — inclusive o caso que deixaria um quadro macio na
+tela se a escala do rascunho um dia chegasse perto de 1.
+
+Isso também corrigiu a regra de vizinho-mais-próximo. Ela existe para mostrar a
+grade de pixels **da fotografia**, então só se aplica quando o preview carrega
+esses pixels um para um; um rascunho já é interpolação, e desenhá-lo em blocos
+duros mostraria uma grade que não é a da foto.
 
 ### Tamanho
 
