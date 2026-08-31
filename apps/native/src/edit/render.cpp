@@ -80,7 +80,7 @@ std::vector<CompiledLayer> Compile(const std::vector<Layer>& layers, const Fitte
       if (found != masks.end()) raster = found->second.get();
     }
     const FittedPatch* fitted = nullptr;
-    if (layer.kind == LayerKind::kPatch) {
+    if (layer.kind == LayerKind::kPatch || layer.fill == FillKind::kImage) {
       const auto found = patches.find(layer.patch);
       if (found != patches.end()) fitted = found->second.get();
     }
@@ -132,6 +132,11 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
       if (compiled[i].wants_background()) {
         compiled[i].SetBackground(EstimateBackground(scratch, compiled[i].mask()));
       }
+      if (compiled[i].wants_backdrop()) {
+        compiled[i].SetBackdrop(EstimateBackground(scratch, compiled[i].mask(),
+                                                   compiled[i].backdrop_grid(),
+                                                   compiled[i].backdrop_smoothing()));
+      }
       compiled[i].ApplyDetailTo(scratch, scale, token);
       ApplyInPlace(scratch, compiled[i], token);
     }
@@ -143,6 +148,11 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
   }
   if (compiled.back().wants_background()) {
     compiled.back().SetBackground(EstimateBackground(*input, compiled.back().mask()));
+  }
+  if (compiled.back().wants_backdrop()) {
+    compiled.back().SetBackdrop(EstimateBackground(*input, compiled.back().mask(),
+                                                   compiled.back().backdrop_grid(),
+                                                   compiled.back().backdrop_smoothing()));
   }
   color::ConvertBanded(*input, result, space, token, LayerStep{compiled.back()}, flatten);
   return result;

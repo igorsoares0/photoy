@@ -6,6 +6,7 @@ import {
   type ApiResult,
   type OpenedProject,
   type ProjectState,
+  type BackdropResult,
   type InpaintResult,
   type SegmentResult,
 } from '@photoy/ipc';
@@ -316,6 +317,26 @@ export function registerIpcHandlers(
       else database.forgetFile(candidate);
     }
     return alive;
+  });
+
+  handle(Channels.backgroundChoose, async (documentId: string) => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const options = {
+      title: 'Escolher fundo',
+      properties: ['openFile' as const],
+      filters: IMAGE_FILTERS,
+    };
+    const picked = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    if (picked.canceled || picked.filePaths.length === 0) return null;
+
+    const filePath = resolveReadablePath(picked.filePaths[0]);
+    const { result } = await engine.call<BackdropResult>('background.load', {
+      documentId,
+      path: filePath,
+    });
+    return result;
   });
 
   handle(Channels.presetList, async () => database.listPresets());

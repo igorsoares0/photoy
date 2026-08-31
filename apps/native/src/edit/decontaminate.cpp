@@ -6,8 +6,6 @@
 namespace photoy {
 namespace {
 
-/// Cells across the long side. The background is smooth; this is plenty.
-constexpr int kGridLongSide = 192;
 /// Below this weight a cell has seen no background and needs filling in.
 constexpr float kKnown = 1.0e-4f;
 /// Samples each grid cell wants before the stride is allowed to skip pixels.
@@ -61,15 +59,16 @@ void FloodFill(std::vector<float>& rgb, std::vector<float>& weight, int width, i
   }
 }
 
-/// A 3x3 box blur, so the filled grid carries no seams from the fill.
-void Smooth(std::vector<float>& rgb, int width, int height) {
+/// A box blur over the grid, so the filled grid carries no seams from the fill.
+void Smooth(std::vector<float>& rgb, int width, int height, int radius) {
+  if (radius < 1) return;
   std::vector<float> out(rgb.size());
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       float sum[3] = {0.0f, 0.0f, 0.0f};
       float count = 0.0f;
-      for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
+      for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
           const int nx = std::clamp(x + dx, 0, width - 1);
           const int ny = std::clamp(y + dy, 0, height - 1);
           const std::size_t neighbour = (static_cast<std::size_t>(ny) * width + nx) * 3;
@@ -107,12 +106,14 @@ void BackgroundEstimate::SampleAt(int x, int y, float out[3]) const noexcept {
   }
 }
 
-BackgroundEstimatePtr EstimateBackground(const Image16& image, const CompiledMask& mask) {
+BackgroundEstimatePtr EstimateBackground(const Image16& image, const CompiledMask& mask,
+                                         int grid_long_side, int smoothing) {
   if (image.width() <= 0 || image.height() <= 0) return nullptr;
 
   auto estimate = std::make_shared<BackgroundEstimate>();
   const int longest = std::max(image.width(), image.height());
-  const double grid = std::min(static_cast<double>(kGridLongSide), static_cast<double>(longest));
+  const double grid =
+      std::min(static_cast<double>(std::max(1, grid_long_side)), static_cast<double>(longest));
   estimate->width = std::max(1, static_cast<int>(std::lround(image.width() * grid / longest)));
   estimate->height = std::max(1, static_cast<int>(std::lround(image.height() * grid / longest)));
   estimate->scale_x = static_cast<float>(estimate->width) / static_cast<float>(image.width());
@@ -156,7 +157,7 @@ BackgroundEstimatePtr EstimateBackground(const Image16& image, const CompiledMas
   if (!any) return nullptr;
 
   FloodFill(estimate->rgb, weight, estimate->width, estimate->height);
-  Smooth(estimate->rgb, estimate->width, estimate->height);
+  Smooth(estimate->rgb, estimate->width, estimate->height, std::max(1, smoothing));
   return estimate;
 }
 

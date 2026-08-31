@@ -250,6 +250,7 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
         if (target != nullptr) {
           target->fill = operation.fill;
           target->color = operation.color;
+          target->blur = std::clamp(operation.amount, 0.0f, 100.0f);
         }
         break;
       }

@@ -65,7 +65,7 @@ export async function run() {
   await suite.check('describe reports the layer and fill kinds', async () => {
     const { result } = await engine.call('engine.describe');
     assert.deepEqual(result.layerKinds, ['background', 'adjustment', 'matte', 'patch']);
-    assert.deepEqual(result.fillKinds, ['transparent', 'color']);
+    assert.deepEqual(result.fillKinds, ['transparent', 'color', 'blur', 'image']);
     assert.ok(result.operations.includes('setLayerFill'));
   });
 
@@ -299,6 +299,144 @@ export async function run() {
     assert.equal(after(0.46, 0.33)[3], 255, 'the subject should have survived');
     assert.ok(after(0.06, 0.1)[3] < 40, `the background should be gone: ${after(0.06, 0.1)}`);
     await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a blur fill replaces the background with itself, softened', async () => {
+    // The point of the fill: the background is still the background, so what
+    // comes back has to be its colours rather than a colour chosen for it.
+    // Sampled at a boundary between two bands, not in the middle of one: a box
+    // blur in the middle of a band twenty pixels wide sees only that band and
+    // correctly returns it unchanged, which would make this check pass by
+    // measuring nothing.
+    const documentId = await open('patches.png');
+    const before = await read(documentId);
+    const layerId = await addMatte(documentId, { ...CENTRE_MASK, radius: 0.15 });
+    await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'blur', blur: 60 });
+    const after = await read(documentId);
+
+    const edge = after(0.11, 0.5);
+    assert.equal(edge[3], 255, 'a blurred background is opaque');
+    assert.notDeepEqual(edge.slice(0, 3), before(0.11, 0.5).slice(0, 3), 'nothing was blurred');
+    // It has to be a mixture of its neighbours rather than some unrelated
+    // colour: red beside green comes back with both in it.
+    assert.ok(edge[0] > 40 && edge[1] > 40, `not a mixture of its neighbours: ${edge}`);
+    // The subject is inside the mask, so the fill must not have reached it.
+    assert.deepEqual(after(0.5, 0.5), before(0.5, 0.5), 'the fill reached the subject');
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a heavier blur flattens more than a light one', async () => {
+    const measure = async (blur) => {
+      const documentId = await open('patches.png');
+      const layerId = await addMatte(documentId, { ...CENTRE_MASK, radius: 0.15 });
+      await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'blur', blur });
+      const at = await read(documentId);
+      // How different two distant points of the background still are.
+      const left = at(0.05, 0.5);
+      const right = at(0.95, 0.5);
+      await engine.call('image.close', { documentId });
+      return Math.abs(left[0] - right[0]) + Math.abs(left[1] - right[1]) +
+             Math.abs(left[2] - right[2]);
+    };
+    const light = await measure(5);
+    const heavy = await measure(100);
+    assert.ok(heavy < light, `heavier blur kept more contrast: ${light} then ${heavy}`);
+  });
+
+  await suite.check('the subject does not smear into its own background', async () => {
+    // Blurring the whole frame would put a halo of the subject's colour around
+    // it. The estimate is built only from what the mask calls background.
+    const documentId = await open('subject.png');
+    const layerId = await addMatte(documentId, { ...CENTRE_MASK, radius: 0.25, feather: 0.02 });
+    await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'blur', blur: 80 });
+    const at = await read(documentId);
+    // subject.png is a dark subject on a white ground; a smear would drag the
+    // dark outward, so just outside the mask must still read as the ground.
+    const outside = at(0.5, 0.12);
+    assert.ok(outside[0] > 180, `the subject smeared outwards: ${outside}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a blur fill survives a project round trip', async () => {
+    const documentId = await open();
+    const layerId = await addMatte(documentId);
+    await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'blur', blur: 75 });
+
+    const target = path.join(workDir, 'blurred.myphoto');
+    await engine.call('project.save', { documentId, path: target });
+    await engine.call('image.close', { documentId });
+
+    const opened = await engine.call('project.open', { path: target });
+    const layer = opened.result.history.layers.find((entry) => entry.kind === 'matte');
+    assert.equal(layer.fill, 'blur');
+    assert.ok(Math.abs(layer.blur - 75) < 1e-4, `blur was ${layer.blur}`);
+    await engine.call('image.close', { documentId: opened.result.id });
+  });
+
+  await suite.check('an image fill puts another photograph behind the subject', async () => {
+    // The backdrop is stored pixels placed in the document, which is what a
+    // patch already is, so it needs no machinery of its own.
+    const documentId = await open('subject.png');
+    const before = await read(documentId);
+    const layerId = await addMatte(documentId, { ...CENTRE_MASK, radius: 0.25 });
+    const loaded = await engine.call('background.load', {
+      documentId,
+      path: path.join(fixtures, 'gradient.png'),
+    });
+    assert.ok(loaded.result.patch > 0);
+
+    await apply(documentId, {
+      kind: 'setLayerPatch', layerId,
+      patch: loaded.result.patch,
+      patchWidth: loaded.result.patchWidth, patchHeight: loaded.result.patchHeight,
+    });
+    await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'image' });
+
+    const after = await read(documentId);
+    const outside = after(0.05, 0.5);
+    assert.equal(outside[3], 255, 'an image background is opaque');
+    assert.notDeepEqual(outside.slice(0, 3), before(0.05, 0.5).slice(0, 3), 'nothing was placed');
+    assert.deepEqual(after(0.5, 0.5), before(0.5, 0.5), 'the backdrop reached the subject');
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a backdrop is cropped to the frame rather than stretched', async () => {
+    // gradient.png is 200 x 120 and subject.png is square, so covering one with
+    // the other has to take a piece of it, not squash the whole thing.
+    const documentId = await open('subject.png');
+    const { result: history } = await engine.call('edit.history', { documentId });
+    const loaded = await engine.call('background.load', {
+      documentId, path: path.join(fixtures, 'gradient.png'),
+    });
+    assert.equal(loaded.result.patchWidth, history.naturalWidth);
+    assert.equal(loaded.result.patchHeight, history.naturalHeight);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a background image travels inside the project', async () => {
+    const documentId = await open('subject.png');
+    const layerId = await addMatte(documentId, { ...CENTRE_MASK, radius: 0.25 });
+    const loaded = await engine.call('background.load', {
+      documentId, path: path.join(fixtures, 'gradient.png'),
+    });
+    await apply(documentId, {
+      kind: 'setLayerPatch', layerId,
+      patch: loaded.result.patch,
+      patchWidth: loaded.result.patchWidth, patchHeight: loaded.result.patchHeight,
+    });
+    await apply(documentId, { kind: 'setLayerFill', layerId, fill: 'image' });
+    const expected = (await read(documentId))(0.05, 0.5);
+
+    const target = path.join(workDir, 'backdrop.myphoto');
+    await engine.call('project.save', { documentId, path: target });
+    await engine.call('image.close', { documentId });
+
+    const opened = await engine.call('project.open', { path: target });
+    const layer = opened.result.history.layers.find((entry) => entry.kind === 'matte');
+    assert.equal(layer.fill, 'image');
+    assert.ok(layer.patch > 0, 'the backdrop identifier was lost');
+    assert.deepEqual((await read(opened.result.id))(0.05, 0.5), expected);
+    await engine.call('image.close', { documentId: opened.result.id });
   });
 
   engine.close();

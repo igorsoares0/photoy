@@ -11,6 +11,7 @@
 #include "decoder/format_sniffer.h"
 #include "core/json.h"
 #include "edit/render.h"
+#include "image/resample.h"
 #include "edit/serialize.h"
 #include "ai/inpainter.h"
 #include "ai/segmenter.h"
@@ -79,6 +80,7 @@ json DescribeLayer(const Layer& layer) {
               {"fill", FillKindName(layer.fill)},
               {"color", json{{"r", layer.color.r}, {"g", layer.color.g}, {"b", layer.color.b}}},
               {"decontaminate", layer.decontaminate},
+              {"blur", layer.blur},
               {"patch", layer.patch},
               {"patchWidth", layer.patch_width},
               {"patchHeight", layer.patch_height},
@@ -257,7 +259,8 @@ void Engine::Dispatch(const nlohmann::json& header,
         MakeFailure(id, error_code::kInternalError, "Unexpected engine failure", failure.what()));
   }
 
-  const bool known = method == "ai.inpaint" || method == "image.open" ||
+  const bool known = method == "ai.inpaint" || method == "background.load" ||
+                     method == "image.open" ||
                      method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
                      method == "project.save" || method == "ai.segment";
@@ -284,6 +287,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                        response = SegmentJob(id, params, token);
                      } else if (method == "ai.inpaint") {
                        response = InpaintJob(id, params, token);
+                     } else if (method == "background.load") {
+                       response = LoadBackdrop(id, params, token);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -412,7 +417,7 @@ nlohmann::json Engine::Describe() const {
                             "setLayerOpacity", "setLayerBlend", "setLayerMask",
                             "setLayerFill", "setLayerDecontaminate", "setLayerPatch"})},
               {"layerKinds", json::array({"background", "adjustment", "matte", "patch"})},
-              {"fillKinds", json::array({"transparent", "color"})},
+              {"fillKinds", json::array({"transparent", "color", "blur", "image"})},
               {"blendModes",
                json::array({"normal", "multiply", "screen", "overlay", "soft-light"})},
               {"maskKinds", json::array({"none", "linear", "radial", "raster"})},
@@ -581,7 +586,9 @@ FittedPatches Engine::FitPatches(Document& document, const PreviewPlan& plan,
                                  const std::vector<Layer>& layers) const {
   FittedPatches fitted;
   for (const Layer& layer : layers) {
-    if (layer.kind != LayerKind::kPatch || layer.patch == 0) continue;
+    const bool draws_pixels =
+        layer.kind == LayerKind::kPatch || layer.fill == FillKind::kImage;
+    if (!draws_pixels || layer.patch == 0) continue;
     // Same rule as a raster mask: a patch belongs to the crop and the
     // orientation it was made against, and a resize is not that case.
     if (layer.patch_width != plan.geometry.NaturalWidth() ||
@@ -626,6 +633,60 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
                               {"raster", raster},
                               {"width", plan.geometry.NaturalWidth()},
                               {"height", plan.geometry.NaturalHeight()}});
+}
+
+protocol::Frame Engine::LoadBackdrop(std::int64_t id, const json& params,
+                                     const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::string path = RequireString(params, "path");
+
+  std::vector<std::uint8_t> bytes = paths::ReadAll(path);
+  ImageFormat format = ImageFormat::kUnknown;
+  DecodedImage decoded = Decode(bytes, &format);
+  const Image16 working = color::ToWorking(decoded.pixels, color::Profile::FromIcc(decoded.icc));
+
+  const Geometry geometry = FoldGeometry(document->ActiveOperations(), document->source.width(),
+                                         document->source.height());
+  const int frame_width = geometry.NaturalWidth();
+  const int frame_height = geometry.NaturalHeight();
+  if (frame_width <= 0 || frame_height <= 0 || working.empty()) {
+    throw EngineException(error_code::kInvalidRequest, "Nothing to place",
+                          "the document or the backdrop is empty");
+  }
+
+  // Cropped to the document's shape and then scaled to fill it, so a backdrop
+  // covers the frame without being stretched out of proportion. Stored at the
+  // model of a patch: capped in size, because a backdrop is behind a subject
+  // and detail there is not what anyone is looking at.
+  constexpr int kMaxBackdrop = 2048;
+  const double frame_aspect = static_cast<double>(frame_width) / frame_height;
+  const double source_aspect = static_cast<double>(working.width()) / working.height();
+  Rect crop{0, 0, working.width(), working.height()};
+  if (source_aspect > frame_aspect) {
+    crop.width = std::max(1, static_cast<int>(std::lround(working.height() * frame_aspect)));
+    crop.x = (working.width() - crop.width) / 2;
+  } else if (source_aspect < frame_aspect) {
+    crop.height = std::max(1, static_cast<int>(std::lround(working.width() / frame_aspect)));
+    crop.y = (working.height() - crop.height) / 2;
+  }
+
+  const int longest = std::max(frame_width, frame_height);
+  const double scale = std::min(1.0, static_cast<double>(kMaxBackdrop) / longest);
+  const int target_width = std::max(1, static_cast<int>(std::lround(frame_width * scale)));
+  const int target_height = std::max(1, static_cast<int>(std::lround(frame_height * scale)));
+  const Image16 placed = ResampleTo(working, crop, target_width, target_height, token);
+
+  PatchBuffer backdrop;
+  backdrop.region = Rect{0, 0, frame_width, frame_height};
+  backdrop.document_width = frame_width;
+  backdrop.document_height = frame_height;
+  backdrop.pixels = color::ToOutput8(placed, color::OutputSpace::kSrgb, token);
+  const std::uint64_t identifier = document->StorePatch(std::move(backdrop));
+
+  return MakeSuccess(id, json{{"documentId", document->id},
+                              {"patch", identifier},
+                              {"patchWidth", frame_width},
+                              {"patchHeight", frame_height}});
 }
 
 protocol::Frame Engine::InpaintJob(std::int64_t id, const json& params,
@@ -771,7 +832,7 @@ protocol::Frame Engine::ExportImage(std::int64_t id, const json& params,
                                                      Resize(*full, output_width, output_height)));
       }
     }
-    if (layer.kind == LayerKind::kPatch && layer.patch != 0 &&
+    if ((layer.kind == LayerKind::kPatch || layer.fill == FillKind::kImage) && layer.patch != 0 &&
         layer.patch_width == geometry.NaturalWidth() &&
         layer.patch_height == geometry.NaturalHeight() && options.patches.count(layer.patch) == 0) {
       const std::shared_ptr<const PatchBuffer> full = document->FindPatch(layer.patch);

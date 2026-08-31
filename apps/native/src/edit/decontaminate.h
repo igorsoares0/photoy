@@ -45,6 +45,16 @@ using BackgroundEstimatePtr = std::shared_ptr<const BackgroundEstimate>;
  * filled by spreading their neighbours inward, so every edge pixel has a value
  * to unmix against even when it sits deep inside a hairline.
  */
-BackgroundEstimatePtr EstimateBackground(const Image16& image, const CompiledMask& mask);
+/**
+ * `grid_long_side` is how many cells the estimate spans, and `smoothing` is the
+ * box radius, in cells, it is blurred by afterwards.
+ *
+ * Unmixing an edge wants the coarsest, smoothest thing that can still be called
+ * the background. Replacing a background with a blurred version of itself wants
+ * the same construction at a finer grid and a chosen radius, which is why this
+ * takes the two as parameters rather than owning an opinion about them.
+ */
+BackgroundEstimatePtr EstimateBackground(const Image16& image, const CompiledMask& mask,
+                                         int grid_long_side = 192, int smoothing = 1);
 
 }  // namespace photoy

@@ -448,9 +448,23 @@ tudo que a máscara não marca deixa de aparecer. Os pixels continuam lá: dá p
 desfazer, suavizar a borda, inverter, esconder a camada ou trocar o fundo depois
 sem segmentar de novo. É a mesma razão de a pilha de edição ser o estado.
 
-O que entra no lugar do fundo tem duas opções hoje, **transparente e cor**.
-Imagem e desfoque (§19) ficam para depois, por decisão minha e do usuário: as
-duas primeiras fecham o caso comum e a exportação já sabe carregar alfa.
+O que entra no lugar do fundo são as quatro que a §20 pede menos a gerada por
+IA, que a própria spec classifica como experimental: **transparente, cor,
+desfoque e imagem**.
+
+**Desfoque** reaproveita a estimativa de fundo que a descontaminação já usava —
+a mesma construção, com a grade e o raio como parâmetros em vez de opiniões
+fixas. Ela é montada **só a partir dos pixels que a máscara chama de fundo**, e é
+por isso que o sujeito não vira um halo em volta de si mesmo: desfocar o quadro
+inteiro arrastaria a cor dele para fora. Como um desfoque pesado é liso por
+construção, montá-lo numa grade pequena e amostrar de volta é indistinguível de
+fazê-lo inteiro, e custa um dezesseis avos.
+
+**Imagem** não precisou de máquina nova: um fundo é pixels guardados colocados no
+documento, que é exatamente o que um patch já é. A camada aponta para ele do
+mesmo jeito, e ele viaja dentro do `.myphoto` porque patches já viajam. A imagem
+é recortada para a forma do documento e escalada para preenchê-lo — recortada, e
+não esticada, que é a diferença entre um fundo e um fundo espremido.
 
 Um detalhe que só aparece na exportação: **JPEG não tem canal alfa**. Deixar o
 encoder simplesmente descartá-lo traria o fundo removido de volta, calado, o que

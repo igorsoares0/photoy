@@ -50,11 +50,20 @@ LayerKind LayerKindFromName(const std::string& name) noexcept {
 }
 
 const char* FillKindName(FillKind kind) noexcept {
-  return kind == FillKind::kColor ? "color" : "transparent";
+  switch (kind) {
+    case FillKind::kColor: return "color";
+    case FillKind::kBlur: return "blur";
+    case FillKind::kImage: return "image";
+    case FillKind::kTransparent: break;
+  }
+  return "transparent";
 }
 
 FillKind FillKindFromName(const std::string& name) noexcept {
-  return name == "color" ? FillKind::kColor : FillKind::kTransparent;
+  if (name == "color") return FillKind::kColor;
+  if (name == "blur") return FillKind::kBlur;
+  if (name == "image") return FillKind::kImage;
+  return FillKind::kTransparent;
 }
 
 const char* BlendModeName(BlendMode mode) noexcept {
@@ -104,11 +113,21 @@ CompiledLayer::CompiledLayer(const Layer& layer, int width, int height, const Ma
     transparent_ = opacity_ <= 0.0f || patch_ == nullptr || patch_->empty();
     return;
   }
+
   if (kind_ == LayerKind::kMatte) {
     // A matte with nothing to mask covers the whole frame, which leaves it
     // exactly as it found it.
     transparent_ = opacity_ <= 0.0f || mask_.open();
     decontaminate_ = std::clamp(layer.decontaminate, 0.0f, 1.0f);
+    if (fill_ == FillKind::kBlur) {
+      // The grid is the resolution the blur is built at and the smoothing is
+      // its radius in cells. A heavy blur is smooth by construction, so nothing
+      // is lost by building it small and sampling it back up - and it costs a
+      // sixteenth of what the full frame would.
+      const float amount = std::clamp(layer.blur, 0.0f, 100.0f) / 100.0f;
+      backdrop_smoothing_ = std::max(1, static_cast<int>(std::lround(1.0f + amount * 22.0f)));
+      backdrop_grid_ = 256;
+    }
     if (fill_ == FillKind::kColor) {
       // The picked colour is sRGB; the composite is linear working space. The
       // conversion happens once here rather than once per pixel.
@@ -193,13 +212,28 @@ void CompiledLayer::Apply(float& r, float& g, float& b, float& a, int x, int y) 
     }
     // Standard over-compositing with unpremultiplied colour: what is left of
     // the photograph sits on top of an opaque fill.
+    float fill[3] = {fill_color_[0], fill_color_[1], fill_color_[2]};
+    if (fill_ == FillKind::kBlur) {
+      if (backdrop_ == nullptr) return;
+      backdrop_->SampleAt(x, y, fill);
+    } else if (fill_ == FillKind::kImage) {
+      // A backdrop that has not arrived - never chosen, or made for a different
+      // crop - leaves the photograph as it is rather than punching a hole.
+      if (patch_ == nullptr || patch_->empty()) return;
+      const int px = std::clamp(x - patch_->x, 0, patch_->pixels.width() - 1);
+      const int py = std::clamp(y - patch_->y, 0, patch_->pixels.height() - 1);
+      const std::uint16_t* pixel =
+          patch_->pixels.Row(py) + static_cast<std::size_t>(px) * kChannels;
+      constexpr float kFromSample = 1.0f / 65535.0f;
+      for (int c = 0; c < 3; ++c) fill[c] = pixel[c] * kFromSample;
+    }
     const float subject = a * keep;
     const float behind = 1.0f - keep;
     const float result = subject + behind;
     if (result > 0.0f) {
-      r = (r * subject + fill_color_[0] * behind) / result;
-      g = (g * subject + fill_color_[1] * behind) / result;
-      b = (b * subject + fill_color_[2] * behind) / result;
+      r = (r * subject + fill[0] * behind) / result;
+      g = (g * subject + fill[1] * behind) / result;
+      b = (b * subject + fill[2] * behind) / result;
     }
     a = result;
     return;

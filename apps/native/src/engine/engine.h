@@ -58,6 +58,9 @@ class Engine {
   protocol::Frame FetchMask(std::int64_t id, const nlohmann::json& params);
   protocol::Frame InpaintJob(std::int64_t id, const nlohmann::json& params,
                              const CancellationTokenPtr& token);
+  /// Reads an image off disk and keeps it as a backdrop for a matte layer.
+  protocol::Frame LoadBackdrop(std::int64_t id, const nlohmann::json& params,
+                               const CancellationTokenPtr& token);
 
   // Worker-thread handlers.
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);

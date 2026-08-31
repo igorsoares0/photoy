@@ -7,6 +7,7 @@ import {
   type OpenedProject,
   type PhotoyApi,
   type ProjectState,
+  type BackdropResult,
   type InpaintResult,
   type SegmentResult,
   type SessionBootstrap,
@@ -63,6 +64,10 @@ const api: PhotoyApi = {
   deletePreset: (id: string) =>
     ipcRenderer.invoke(Channels.presetDelete, id) as Promise<ApiResult<Preset[]>>,
   listRecent: () => ipcRenderer.invoke(Channels.recentList) as Promise<ApiResult<string[]>>,
+  chooseBackground: (documentId: string) =>
+    ipcRenderer.invoke(Channels.backgroundChoose, documentId) as Promise<
+      ApiResult<BackdropResult | null>
+    >,
 
   applyEdit: (documentId: string, operation: Operation, replaceTop = false) =>
     ipcRenderer.invoke(Channels.editApply, documentId, operation, replaceTop) as Promise<

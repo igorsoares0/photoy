@@ -142,6 +142,7 @@ json ToJson(const Operation& operation) {
       entry["fill"] = FillKindName(operation.fill);
       entry["color"] = json{{"r", operation.color.r}, {"g", operation.color.g},
                             {"b", operation.color.b}};
+      entry["blur"] = operation.amount;
       break;
     case OperationKind::kSetLayerPatch:
       entry["layerId"] = operation.target_layer;
@@ -238,6 +239,7 @@ Operation FromJson(const json& value) {
     operation.color.r = std::clamp(OptionalFloat(c, "r", 1.0f), 0.0f, 1.0f);
     operation.color.g = std::clamp(OptionalFloat(c, "g", 1.0f), 0.0f, 1.0f);
     operation.color.b = std::clamp(OptionalFloat(c, "b", 1.0f), 0.0f, 1.0f);
+    operation.amount = std::clamp(OptionalFloat(value, "blur", 40.0f), 0.0f, 100.0f);
     return operation;
   }
   if (kind == "resize") {

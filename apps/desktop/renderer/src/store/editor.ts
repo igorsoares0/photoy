@@ -96,6 +96,9 @@ interface EditorState {
   setEngineState(state: EngineState): void;
   openDialog(): Promise<void>;
   openPath(path: string): Promise<void>;
+  /** Files opened before, newest first, with the ones that vanished dropped. */
+  recent: string[];
+  loadRecent(): Promise<void>;
   closeDocument(): Promise<void>;
   /**
    * True while a slider is being dragged, between the first frame and release.
@@ -175,8 +178,10 @@ interface EditorState {
   segmentIntoMask(id: number): Promise<void>;
   /** Segments the subject and cuts everything else away, as one action. */
   removeBackground(): Promise<void>;
-  setLayerFill(id: number, fill: FillKind, color?: FillColor): Promise<void>;
+  setLayerFill(id: number, fill: FillKind, color?: FillColor, blur?: number): Promise<void>;
   setLayerDecontaminate(id: number, amount: number, continuing: boolean): Promise<void>;
+  /** Asks for an image and makes it the background of a matte layer. */
+  chooseBackgroundImage(layerId: number): Promise<void>;
   moveLayer(id: number, delta: number): Promise<void>;
 
   beginCrop(): void;
@@ -349,6 +354,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   interacting: false,
   brush: null,
   presets: [],
+  recent: [],
   comparing: false,
   baseline: null,
 
@@ -672,13 +678,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
 
-  setLayerFill: async (id, fill, color) => {
+  setLayerFill: async (id, fill, color, blur) => {
     const document = get().document;
     if (document === null) return;
     await adoptHistory(
       set,
       get,
-      await window.photoy.applyEdit(document.id, { kind: 'setLayerFill', layerId: id, fill, color }),
+      await window.photoy.applyEdit(document.id, {
+        kind: 'setLayerFill', layerId: id, fill, color, blur,
+      }),
     );
   },
 
@@ -754,6 +762,33 @@ export const useEditor = create<EditorState>((set, get) => ({
       rasterWidth: history?.naturalWidth ?? width,
       rasterHeight: history?.naturalHeight ?? height,
     });
+  },
+
+  chooseBackgroundImage: async (layerId) => {
+    const document = get().document;
+    if (document === null) return;
+
+    const chosen = await window.photoy.chooseBackground(document.id);
+    if (!chosen.ok) {
+      set({ error: chosen.error });
+      return;
+    }
+    if (chosen.value === null) return; // dismissed
+
+    // The backdrop is stored pixels placed in the document, which is what a
+    // patch already is, so the layer points at it the same way.
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'setLayerPatch',
+        layerId,
+        patch: chosen.value.patch,
+        patchWidth: chosen.value.patchWidth,
+        patchHeight: chosen.value.patchHeight,
+      }),
+    );
+    await get().setLayerFill(layerId, 'image');
   },
 
   setLayerDecontaminate: async (id, amount, continuing) => {
@@ -858,6 +893,11 @@ export const useEditor = create<EditorState>((set, get) => ({
       get,
       await window.photoy.applyEdit(document.id, { kind: 'crop', rect: cropRect }),
     );
+  },
+
+  loadRecent: async () => {
+    const listed = await window.photoy.listRecent();
+    if (listed.ok) set({ recent: listed.value });
   },
 
   loadPresets: async () => {

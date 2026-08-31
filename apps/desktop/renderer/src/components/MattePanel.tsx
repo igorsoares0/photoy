@@ -7,6 +7,8 @@ import { Slider } from './Slider';
 const FILLS: Array<{ value: FillKind; label: string }> = [
   { value: 'transparent', label: 'Transparente' },
   { value: 'color', label: 'Cor' },
+  { value: 'blur', label: 'Desfoque' },
+  { value: 'image', label: 'Imagem' },
 ];
 
 /** Enough to reach for without opening a picker; the picker covers the rest. */
@@ -46,7 +48,10 @@ export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
   const setLayerFill = useEditor((state) => state.setLayerFill);
   const setLayerOpacity = useEditor((state) => state.setLayerOpacity);
   const setLayerDecontaminate = useEditor((state) => state.setLayerDecontaminate);
+  const chooseBackgroundImage = useEditor((state) => state.chooseBackgroundImage);
   const filled = layer.fill === 'color';
+  const blurred = layer.fill === 'blur';
+  const imaged = layer.fill === 'image';
 
   return (
     <>
@@ -58,7 +63,13 @@ export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
               <button
                 key={fill.value}
                 type="button"
-                onClick={() => void setLayerFill(layer.id, fill.value, layer.color)}
+                onClick={() => {
+                  if (fill.value === 'image' && layer.patch === 0) {
+                    void chooseBackgroundImage(layer.id);
+                    return;
+                  }
+                  void setLayerFill(layer.id, fill.value, layer.color, layer.blur);
+                }}
                 className="photoy-chip"
                 style={{
                   border: `1px solid ${selected ? 'var(--border-hover)' : 'var(--border-quiet)'}`,
@@ -83,7 +94,7 @@ export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
                   type="button"
                   title={preset.label}
                   aria-label={preset.label}
-                  onClick={() => void setLayerFill(layer.id, 'color', color)}
+                  onClick={() => void setLayerFill(layer.id, 'color', color, layer.blur)}
                   style={{
                     width: 22,
                     height: 22,
@@ -107,12 +118,47 @@ export function MattePanel({ layer }: { layer: Layer }): React.JSX.Element {
               <input
                 type="color"
                 value={hexOf(layer.color)}
-                onChange={(event) => void setLayerFill(layer.id, 'color', colorOf(event.target.value))}
+                onChange={(event) =>
+                  void setLayerFill(layer.id, 'color', colorOf(event.target.value), layer.blur)
+                }
                 aria-label="Escolher cor do fundo"
                 style={{ width: 22, height: 22, padding: 0, border: 'none', background: 'transparent' }}
               />
             </label>
           </div>
+        ) : null}
+
+        {imaged ? (
+          <button
+            type="button"
+            onClick={() => void chooseBackgroundImage(layer.id)}
+            className="photoy-chip"
+            style={{
+              height: 30,
+              borderRadius: 'var(--radius-control)',
+              fontSize: 'var(--text-control)',
+              border: '1px solid var(--border-quiet)',
+              background: 'transparent',
+              color: 'var(--fg-primary)',
+            }}
+          >
+            {layer.patch === 0 ? 'Escolher imagem…' : 'Trocar imagem…'}
+          </button>
+        ) : null}
+
+        {blurred ? (
+          <Slider
+            label="Desfoque"
+            value={Math.round(layer.blur)}
+            min={0}
+            max={100}
+            display={`${Math.round(layer.blur)} %`}
+            origin={40}
+            onChange={(next, continuing) =>
+              void setLayerFill(layer.id, 'blur', layer.color, next)
+            }
+            onReset={() => void setLayerFill(layer.id, 'blur', layer.color, 40)}
+          />
         ) : null}
 
         {/* A soft edge is a mixture of subject and background, so compositing

@@ -105,7 +105,7 @@ export function isMaskStale(mask: Mask, width: number, height: number): boolean 
 export type LayerKind = 'background' | 'adjustment' | 'matte' | 'patch';
 
 /** What takes the place of what a matte layer removes. */
-export type FillKind = 'transparent' | 'color';
+export type FillKind = 'transparent' | 'color' | 'blur' | 'image';
 
 /** A picked colour, in sRGB, 0 to 1 per channel. */
 export interface FillColor {
@@ -136,6 +136,13 @@ export interface Layer {
   color: FillColor;
   /** kind 'matte': how much of the old background's colour to unmix, 0 to 1. */
   decontaminate: number;
+  /**
+   * kind 'matte' with a blur fill: how heavily the background is blurred.
+   *
+   * Built from the pixels the mask calls background, never from the subject:
+   * blurring the whole frame would smear the subject into a halo around itself.
+   */
+  blur: number;
   /**
    * kind 'patch': the stored pixels this layer draws, and what they were made
    * against.
@@ -278,6 +285,7 @@ export interface SetLayerFillOperation {
   layerId: number;
   fill: FillKind;
   color?: FillColor;
+  blur?: number;
 }
 
 export interface LayerOperation {

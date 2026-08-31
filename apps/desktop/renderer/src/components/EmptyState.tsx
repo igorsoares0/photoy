@@ -1,4 +1,5 @@
 import { useEditor } from '../store/editor';
+import { RecentFiles } from './RecentFiles';
 
 /**
  * The empty canvas is a dashed well with an instruction and a monospace hint.
@@ -9,7 +10,7 @@ export function EmptyState({ dragging }: { dragging: boolean }): React.JSX.Eleme
   const openDialog = useEditor((state) => state.openDialog);
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center p-10">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-10">
       <button
         type="button"
         onClick={() => void openDialog()}
@@ -33,6 +34,10 @@ export function EmptyState({ dragging }: { dragging: boolean }): React.JSX.Eleme
           jpg · png · tiff · webp
         </span>
       </button>
+
+      <div style={{ width: 'min(520px, 78%)' }}>
+        <RecentFiles />
+      </div>
     </div>
   );
 }

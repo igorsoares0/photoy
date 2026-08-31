@@ -23,7 +23,7 @@ namespace photoy {
 enum class LayerKind { kBackground, kAdjustment, kMatte, kPatch };
 
 /// What takes the place of what a matte layer removes.
-enum class FillKind { kTransparent, kColor };
+enum class FillKind { kTransparent, kColor, kBlur, kImage };
 
 const char* FillKindName(FillKind kind) noexcept;
 FillKind FillKindFromName(const std::string& name) noexcept;
@@ -76,9 +76,20 @@ struct Layer {
    * honest remedy.
    */
   float decontaminate = 1.0f;
+  /**
+   * kMatte with a blur fill: how heavily the background is blurred, 0 to 100.
+   *
+   * The blur is built from the pixels the mask calls background, never from the
+   * subject: blurring the whole frame would smear the subject's own colour into
+   * a halo around it, which is precisely the artefact this is meant to avoid.
+   */
+  float blur = 40.0f;
 
   /**
    * kPatch: which stored patch this layer draws, and what it was made against.
+   * A matte with an image fill uses the same three: a backdrop is stored pixels
+   * placed in the document exactly as a patch is, so it needs no machinery of
+   * its own and travels inside the project the way a patch already does.
    *
    * The patch is what the model invented; the mask above decides how much of it
    * is used. Keeping them apart is what lets the marked area be adjusted after
@@ -124,6 +135,16 @@ class CompiledLayer {
     background_ = std::move(background);
   }
 
+  /// True when the fill is a blurred copy of the background, still to be built.
+  bool wants_backdrop() const noexcept {
+    return kind_ == LayerKind::kMatte && !transparent_ && fill_ == FillKind::kBlur &&
+           backdrop_ == nullptr;
+  }
+  /// How fine and how smooth the backdrop for this layer should be.
+  int backdrop_grid() const noexcept { return backdrop_grid_; }
+  int backdrop_smoothing() const noexcept { return backdrop_smoothing_; }
+  void SetBackdrop(BackgroundEstimatePtr backdrop) noexcept { backdrop_ = std::move(backdrop); }
+
   void Apply(float& r, float& g, float& b, float& a, int x, int y) const noexcept;
 
   /// Runs sharpening and clarity over a buffer, before the per-pixel work.
@@ -140,6 +161,9 @@ class CompiledLayer {
   float opacity_ = 1.0f;
   float decontaminate_ = 0.0f;
   BackgroundEstimatePtr background_;
+  BackgroundEstimatePtr backdrop_;
+  int backdrop_grid_ = 256;
+  int backdrop_smoothing_ = 1;
   const FittedPatch* patch_ = nullptr;
   /// Kept whole for the spatial pass, which needs the amounts and not a table.
   Adjustments raw_adjustments_;

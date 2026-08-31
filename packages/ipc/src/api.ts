@@ -38,6 +38,14 @@ export interface RecoveryOffer {
 }
 
 /** What is open, and whether it has changes the project file does not have. */
+/** A backdrop image, placed to cover the frame. */
+export interface BackdropResult {
+  documentId: string;
+  patch: number;
+  patchWidth: number;
+  patchHeight: number;
+}
+
 /** A stored mask handed back with its pixels. */
 export interface StoredMask {
   raster: number;
@@ -151,6 +159,15 @@ export interface PhotoyApi {
 
   /** Files opened before, newest first, with the ones that vanished dropped. */
   listRecent(): Promise<ApiResult<string[]>>;
+
+  /**
+   * Asks for an image and keeps it as a backdrop for a matte layer.
+   *
+   * Null when the dialog was dismissed. The picture is cropped to the shape of
+   * the document and scaled to fill it, so it covers the frame without being
+   * stretched.
+   */
+  chooseBackground(documentId: string): Promise<ApiResult<BackdropResult | null>>;
 
   applyEdit(
     documentId: string,
