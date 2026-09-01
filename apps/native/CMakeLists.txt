@@ -71,6 +71,7 @@ add_executable(photoy-engine
   src/decoder/tiff_decoder.cpp
   src/decoder/webp_decoder.cpp
   src/decoder/raw_decoder.cpp
+  src/decoder/heif_decoder.cpp
   src/decoder/decode.cpp
 
   src/export/jpeg_encoder.cpp
@@ -105,12 +106,27 @@ target_link_libraries(photoy-engine PRIVATE
   # dependency.
   libraw::raw_r
   "${PHOTOY_ORT}/lib/onnxruntime.lib"
-  # DXGI enumerates the graphics adapters. Part of the Windows SDK, so it adds
-  # no dependency - and nothing above ai/compute.h knows it was asked.
-  dxgi
 )
 
 # The runtime is a DLL; it has to sit beside the engine to be found.
 add_custom_command(TARGET photoy-engine POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${PHOTOY_ORT}/lib/onnxruntime.dll" "$<TARGET_FILE_DIR:photoy-engine>")
+
+if(WIN32)
+  # Both are Windows SDK libraries, so neither adds a dependency. Kept here
+  # rather than in the list above because the port to macOS reaches these two
+  # through ImageIO and Metal instead, and a link line that named them
+  # unconditionally would not configure there at all.
+  #
+  #   dxgi          enumerates the graphics adapters for ai/compute.h
+  #   windowscodecs decodes HEIC, which is how it is read without shipping HEVC
+  target_link_libraries(photoy-engine PRIVATE dxgi windowscodecs)
+
+  # Test-only. Makes the HEIC fixtures with the platform's own codec, because
+  # there is no HEIC encoder in this tree and deliberately never will be. Built
+  # beside the engine so `npm test` can reach it; ships with nothing.
+  add_executable(photoy-heic-fixture tools/heic_fixture.cpp)
+  target_link_libraries(photoy-heic-fixture PRIVATE windowscodecs ole32)
+  set_target_properties(photoy-heic-fixture PROPERTIES OUTPUT_NAME "heic-fixture")
+endif()

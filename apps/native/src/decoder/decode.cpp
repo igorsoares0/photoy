@@ -24,6 +24,7 @@ DecodedImage Decode(const std::vector<std::uint8_t>& bytes, ImageFormat* out_for
     case ImageFormat::kTiff: return DecodeTiff(bytes);
     case ImageFormat::kWebp: return DecodeWebp(bytes);
     case ImageFormat::kRaw: return DecodeRaw(bytes, settings);
+    case ImageFormat::kHeif: return DecodeHeif(bytes);
     case ImageFormat::kUnknown: break;
   }
   throw EngineException(error_code::kUnsupportedFormat, "Unsupported image format",

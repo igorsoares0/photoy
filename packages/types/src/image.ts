@@ -10,7 +10,7 @@ export type PixelFormat = 'rgba8';
 export type ExportFormat = 'jpeg' | 'png' | 'tiff' | 'webp';
 
 /** Container formats the engine can open. */
-export type ImageFormat = ExportFormat | 'raw';
+export type ImageFormat = ExportFormat | 'raw' | 'heif';
 
 /**
  * Colour spaces the engine can write out.

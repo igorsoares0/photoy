@@ -61,6 +61,24 @@ export async function run() {
     assert.equal(resolveReadablePath(negative), negative);
   });
 
+  await suite.check('a HEIC passes the readable gate', async () => {
+    // It opens only where the platform has the codec, but the guard is not the
+    // place to decide that: refusing here would replace an error that says what
+    // to install with a dialog that does not show the file at all.
+    const phone = path.join(directory, 'IMG_0042.HEIC');
+    writeFileSync(phone, 'not really a heic');
+    assert.equal(resolveReadablePath(phone), phone);
+    assert.equal(hasReadableExtension('foto.heif'), true);
+  });
+
+  await suite.check('HEIC is offered for opening but never for export', async () => {
+    // Reading it borrows the platform's decoder; writing it would mean shipping
+    // an HEVC encoder, which is the thing this whole approach exists to avoid.
+    assert.ok(OPEN_FILTERS.some((filter) => filter.name === 'HEIC'));
+    assert.ok(EXPORT_FILTERS.every((filter) => filter.name !== 'HEIC'));
+    assert.ok(EXPORT_FILTERS.every((filter) => !filter.extensions.includes('heic')));
+  });
+
   await suite.check('raw is offered for opening but never for export', async () => {
     // A raw file cannot be written: there is no way back from edited pixels to
     // a sensor mosaic. The two filter lists exist so the save dialog cannot

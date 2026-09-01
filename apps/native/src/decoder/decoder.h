@@ -11,7 +11,7 @@
 
 namespace photoy {
 
-enum class ImageFormat { kUnknown, kJpeg, kPng, kTiff, kWebp, kRaw };
+enum class ImageFormat { kUnknown, kJpeg, kPng, kTiff, kWebp, kRaw, kHeif };
 
 /// Lowercase wire name, matching the ImageFormat union in packages/types.
 const char* FormatName(ImageFormat format) noexcept;
@@ -88,6 +88,17 @@ DecodedImage DecodeTiff(const std::vector<std::uint8_t>& bytes);
 DecodedImage DecodeWebp(const std::vector<std::uint8_t>& bytes);
 DecodedImage DecodeRaw(const std::vector<std::uint8_t>& bytes,
                        const RawSettings& settings = {});
+
+/**
+ * HEIC, through whatever the operating system has.
+ *
+ * No decoder is shipped and none can be: libheif and libde265 are LGPL-3.0,
+ * which does not combine with this build's static linking, and HEVC carries
+ * patent terms that no licence choice answers. So the frames are handed to the
+ * codec the platform provides - free on macOS, and on Windows the free HEIF
+ * Image Extensions from Microsoft. Not one bit of HEVC ships in this product.
+ */
+DecodedImage DecodeHeif(const std::vector<std::uint8_t>& bytes);
 
 /**
  * Whether the bytes hold raw sensor data.

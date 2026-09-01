@@ -466,7 +466,7 @@ nlohmann::json Engine::Describe() const {
   return json{{"name", kEngineName},
               {"version", kEngineVersion},
               {"protocolVersion", protocol::kProtocolVersion},
-              {"decodeFormats", json::array({"jpeg", "png", "tiff", "raw", "webp"})},
+              {"decodeFormats", json::array({"jpeg", "png", "tiff", "raw", "heif", "webp"})},
               {"encodeFormats", json::array({"jpeg", "png", "tiff", "webp"})},
               {"outputSpaces", json::array({"srgb", "display-p3", "adobe-rgb"})},
               // Reported rather than acted on. The engine runs inference on the

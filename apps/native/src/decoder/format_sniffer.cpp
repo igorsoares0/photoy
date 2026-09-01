@@ -19,6 +19,7 @@ const char* FormatName(ImageFormat format) noexcept {
     case ImageFormat::kTiff: return "tiff";
     case ImageFormat::kWebp: return "webp";
     case ImageFormat::kRaw: return "raw";
+    case ImageFormat::kHeif: return "heif";
     case ImageFormat::kUnknown: break;
   }
   return "unknown";
@@ -34,6 +35,19 @@ ImageFormat SniffFormat(const std::vector<std::uint8_t>& bytes) noexcept {
   if (StartsWith(bytes, kPngMagic, sizeof(kPngMagic))) return ImageFormat::kPng;
   if (StartsWith(bytes, kTiffLittle, sizeof(kTiffLittle))) return ImageFormat::kTiff;
   if (StartsWith(bytes, kTiffBig, sizeof(kTiffBig))) return ImageFormat::kTiff;
+
+  // ISO base media, which is a whole family: bytes 4 to 8 say `ftyp` and the
+  // four after that say which member. HEIC and Canon's CR3 are both in it, so
+  // the brand is the only thing that tells them apart - CR3 says `crx `, and
+  // falls through to the raw probe in Decode.
+  if (bytes.size() >= 12 && std::memcmp(bytes.data() + 4, "ftyp", 4) == 0) {
+    static const char* kHeifBrands[] = {"heic", "heix", "heim", "heis",
+                                        "hevc", "hevx", "hevm", "hevs",
+                                        "mif1", "msf1"};
+    for (const char* brand : kHeifBrands) {
+      if (std::memcmp(bytes.data() + 8, brand, 4) == 0) return ImageFormat::kHeif;
+    }
+  }
 
   // RIFF....WEBP
   if (bytes.size() >= 12 && std::memcmp(bytes.data(), "RIFF", 4) == 0 &&

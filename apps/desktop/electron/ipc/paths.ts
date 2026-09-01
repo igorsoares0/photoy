@@ -15,9 +15,20 @@ const RAW_EXTENSIONS = [
   '.rwl', '.sr2', '.srf', '.srw', '.x3f',
 ];
 
+/**
+ * What phones save.
+ *
+ * Read through the operating system's own codec rather than one shipped here -
+ * see the decoder for why - so on Windows these open only where the free HEIF
+ * Image Extensions are installed. Listed anyway: the engine's refusal says what
+ * to install, which is more use than a file the dialog would not even show.
+ */
+const HEIF_EXTENSIONS = ['.heic', '.heif'];
+
 /** Extensions the engine can decode. Content is still sniffed on open. */
 const READABLE_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.jpe', '.png', '.tif', '.tiff', '.webp',
+  ...HEIF_EXTENSIONS,
   ...RAW_EXTENSIONS,
 ]);
 
@@ -45,6 +56,7 @@ export const OPEN_FILTERS = [
   { name: 'TIFF', extensions: ['tif', 'tiff'] },
   { name: 'WebP', extensions: ['webp'] },
   { name: 'RAW', extensions: RAW_EXTENSIONS.map((extension) => extension.slice(1)) },
+  { name: 'HEIC', extensions: HEIF_EXTENSIONS.map((extension) => extension.slice(1)) },
 ];
 
 /**

@@ -4,6 +4,8 @@ import { argv } from 'node:process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeDng } from './dng.mjs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
 
 /**
  * Writes the PNG fixtures the engine tests read.
@@ -93,6 +95,26 @@ export const SUBJECT_HEIGHT = 600;
 
 export const LARGE_WIDTH = 2600;
 export const LARGE_HEIGHT = 1800;
+
+/**
+ * Converts a PNG fixture to HEIC with the platform's own codec.
+ *
+ * There is no HEIC encoder in this repository and deliberately never will be,
+ * so the fixture is made by the same operating-system codec that reads it back.
+ * On a machine without one nothing is written and the HEIC tests skip - which
+ * is honest, because without the codec the feature does not work there either.
+ */
+function writeHeic(sourceName, targetName) {
+  // Wherever the build put it. Release is the usual one; Debug exists when
+  // somebody is chasing something in the engine.
+  const tool = ['Release', 'Debug']
+    .map((config) => path.resolve(here, `../../build/${config}/bin/heic-fixture.exe`))
+    .find((candidate) => existsSync(candidate));
+  const target = path.join(here, targetName);
+  if (tool === undefined) return;
+  const made = spawnSync(tool, [path.join(here, sourceName), target], { encoding: 'utf8' });
+  if (made.status !== 0 && existsSync(target)) rmSync(target, { force: true });
+}
 
 export function generateFixtures() {
   mkdirSync(here, { recursive: true });
@@ -184,6 +206,8 @@ export function generateFixtures() {
     ((x + y) * 3) & 255,
     255,
   ]);
+  writeHeic('subject.png', 'subject.heic');
+
 }
 
 if (argv[1]?.endsWith('generate.mjs')) {

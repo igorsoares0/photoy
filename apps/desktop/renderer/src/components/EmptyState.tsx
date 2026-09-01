@@ -31,7 +31,7 @@ export function EmptyState({ dragging }: { dragging: boolean }): React.JSX.Eleme
           className="numeric"
           style={{ fontSize: 'var(--text-chip)', color: 'var(--fg-numeric-idle)' }}
         >
-          jpg · png · tiff · webp · raw
+          jpg · png · tiff · webp · raw · heic
         </span>
       </button>
 

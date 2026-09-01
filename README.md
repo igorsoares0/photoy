@@ -215,6 +215,77 @@ o estado inteiro dos controles, e não um delta — é isso que a torna replayá
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
 
+### HEIC, sem embarcar um decodificador
+
+O que os celulares salvam. Não está na spec — é necessidade real, e a resposta
+foi decidida por leitura de licença antes de qualquer código.
+
+**Duas paredes independentes.** `libheif` e `libde265` são **LGPL-3.0-only**, que
+não combina com o link estático deste build. E HEVC carrega termos de patente
+que escolha de licença nenhuma responde: não é questão de achar uma biblioteca
+mais permissiva, porque o problema não está na biblioteca.
+
+**Então nenhum bit de HEVC entra aqui.** Os quadros são entregues ao codec que a
+plataforma já tem — de graça no macOS, e no Windows a extensão HEIF gratuita da
+Microsoft, que o usuário instala. É o que a Adobe faz, com uma página de suporte
+dizendo exatamente isso. O caminho é o **WIC**, a API de imagem do próprio
+Windows: `windowscodecs.lib` é do SDK, então não entrou dependência nenhuma.
+
+**Três coisas que precisaram de cuidado:**
+
+**O contêiner é compartilhado.** HEIC é ISO base media, o mesmo do CR3 da Canon:
+os primeiros bytes são idênticos e só a marca quatro bytes depois separa. O
+sniffer lê a marca; `crx ` cai na sondagem RAW que já existia. Tem teste.
+
+**Dez bits.** Uma foto tirada em HDR num celular vem em dez bits por canal, e
+converter para oito na entrada jogaria fora a faixa antes de qualquer ajuste
+poder usá-la. O decoder consulta a profundidade de origem e escolhe o alvo.
+
+**O perfil de cor.** HEIC de iPhone vem em Display P3. Ler o `IWICColorContext`
+é o que evita a foto abrir dessaturada — e é o tipo de coisa que ninguém percebe
+até comparar lado a lado.
+
+**A mensagem de erro é a única parte disso que o usuário vê.** Uma HEIC que não
+abre quase nunca é um arquivo quebrado — é uma máquina sem o codec. Dizer
+"formato não suportado" mandaria a pessoa procurar defeito na fotografia, então
+a mensagem diz o que instalar. E um arquivo genuinamente corrompido recebe uma
+mensagem diferente, porque mandar instalar o que já está instalado é pior que
+não dizer nada.
+
+**As fixtures são feitas pelo mesmo codec que as lê.** Não há codificador HEIC
+nesta árvore e deliberadamente nunca haverá, então `apps/native/tools` tem um
+gerador que usa o WIC. Numa máquina sem o codec nenhuma fixture aparece e a
+suíte se reporta pulada — o que é honesto, porque ali a funcionalidade também
+não existe.
+
+**Procurar uma foto de verdade para testar valeu — e desmentiu uma correção.**
+A fixture gerada não tem orientação nem perfil, então os dois caminhos escritos
+com mais cuidado estavam sem cobertura. Amostras públicas esbarraram em licença
+(a do repositório HEIF da Nokia é *non-commercial*, a mesma armadilha dos
+modelos) e o Commons não aceita o formato, então a fixture passou a carregar o
+perfil: o nosso exportador escreve um PNG em Display P3 e o codec do sistema o
+leva para dentro do HEIC. Esse caminho tem teste e passa.
+
+A orientação só se resolveu com uma foto real de iPhone 12 Pro. Ao investigá-la
+apareceu **`/heifProps/Orientation`** — HEIF guarda rotação própria no contêiner,
+nas caixas `irot` e `imir`, separada do EXIF. Concluí que o decoder estava
+errado por ler só o EXIF, corrigi, e **a conclusão estava errada**: o arquivo tem
+`irot` com três quartos de volta, não tem tag EXIF de orientação nenhuma, e o
+codec do Windows devolve o quadro **já de pé** reportando a propriedade como 1.
+A versão original teria funcionado.
+
+A leitura da propriedade do contêiner ficou, porque não custa nada e não gira
+duas vezes, mas o comentário ao lado dela agora diz o que a medição mostrou em
+vez do que eu supus. O caso que ela cobre não é imaginário: este decoder é a
+costura que um port para macOS substitui, e nada garante que o codec de lá se
+comporte igual.
+
+**O que uma foto real provou, e uma fabricada não provaria:** dez bits de uma
+captura HDR chegando como dezesseis em vez de serem achatados, o Display P3
+sobrevivendo, e o retrato abrindo em pé. Um HEIC de 12 MP abre em 1,4 s. O teste
+existe e se pula sozinho, porque foto de celular pertence a quem a tirou e não
+vai para o repositório.
+
 ### RAW
 
 A §26 pede RAW quando o público é fotógrafo, e pede uma biblioteca madura em vez
