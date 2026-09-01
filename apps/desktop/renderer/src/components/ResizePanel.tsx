@@ -7,6 +7,15 @@ import { PanelSection } from './PanelSection';
 const MAX_SIDE = 30000;
 
 /**
+ * The enlargements section 23 asks for.
+ *
+ * Multiples of the size the stack currently produces, not of the file: a crop
+ * before this is part of what is being enlarged, and doubling the file behind a
+ * crop would mean something nobody asked for.
+ */
+const FACTORS = [2, 4] as const;
+
+/**
  * The document's output size.
  *
  * A resize is a transformation like crop and rotate, not an export setting: it
@@ -80,6 +89,13 @@ export function ResizePanel(): React.JSX.Element {
 
   const megapixels = (width * height) / 1e6;
 
+  const scaleBy = (factor: number) => {
+    const nextWidth = clamp(width * factor);
+    const nextHeight = clamp(height * factor);
+    if (nextWidth === width && nextHeight === height) return;
+    void applyEdit({ kind: 'resize', width: nextWidth, height: nextHeight });
+  };
+
   return (
     <PanelSection
       label="Tamanho"
@@ -100,6 +116,23 @@ export function ResizePanel(): React.JSX.Element {
         {field('width', 'L')}
         <span style={{ fontSize: 'var(--text-micro)', color: 'var(--fg-numeric-idle)' }}>×</span>
         {field('height', 'A')}
+      </div>
+      <div className="flex items-center" style={{ gap: 'var(--gap-inline)' }}>
+        {FACTORS.map((factor) => (
+          <button
+            key={factor}
+            type="button"
+            className="photoy-mini"
+            style={{ width: 'auto', padding: '0 8px' }}
+            onClick={() => scaleBy(factor)}
+            disabled={width * factor > MAX_SIDE || height * factor > MAX_SIDE}
+          >
+            {factor}×
+          </button>
+        ))}
+        <span style={{ fontSize: 'var(--text-micro)', color: 'var(--fg-numeric-idle)' }}>
+          ampliar
+        </span>
       </div>
       <span className="numeric" style={{ fontSize: 'var(--text-micro)', color: 'var(--fg-numeric-idle)' }}>
         {formatInteger(width)} × {formatInteger(height)} px · {formatDecimal(megapixels, 1)} MP

@@ -35,6 +35,69 @@ export async function run() {
     assert.ok(result.operations.includes('resize'));
   });
 
+  await suite.check('an enlargement reconstructs detail rather than blurring it', async () => {
+    // The claim the filter is chosen for, tested the way it was measured: take
+    // the answer key apart and put it back. A reduction to a quarter and an
+    // enlargement back cannot recover what was thrown away, but how much of the
+    // detail survives is exactly what separates a windowed sinc from a linear
+    // blend - measured at 7.2 against bilinear's 5.0 on this fixture.
+    //
+    // The reduction is written to a file rather than stacked, because the stack
+    // folds resizes into one target size and would otherwise compare the
+    // photograph against itself and pass no matter what.
+    const opened = await open('patches.png');
+    const { result: original } = await engine.call('edit.history', { documentId: opened.id });
+    await apply(opened.id, {
+      kind: 'resize',
+      width: Math.round(original.width / 4),
+      height: Math.round(original.height / 4),
+    });
+    const reduced = path.join(workDir, 'reduced.png');
+    await engine.call('image.export', { documentId: opened.id, path: reduced, format: 'png' });
+    await engine.call('image.close', { documentId: opened.id });
+
+    const back = await open(reduced);
+    await apply(back.id, { kind: 'resize', width: original.width, height: original.height });
+    const { result: info, payload } = await engine.call('image.renderPreview', {
+      documentId: back.id, maxWidth: original.width, maxHeight: original.height,
+    });
+
+    let energy = 0;
+    let count = 0;
+    for (let y = 0; y < info.height; y += 1) {
+      for (let x = 1; x < info.width; x += 1) {
+        for (let c = 0; c < 3; c += 1) {
+          const at = y * info.stride + x * 4 + c;
+          energy += Math.abs(payload[at] - payload[at - 4]);
+          count += 1;
+        }
+      }
+    }
+    const recovered = energy / count;
+    assert.ok(recovered > 6, `only ${recovered.toFixed(3)} of detail recovered, which is a blur`);
+    await engine.call('image.close', { documentId: back.id });
+  });
+
+  await suite.check('an enlargement leaves a flat region flat', async () => {
+    // The kernel's weights do not sum to one on their own, and forgetting to
+    // normalise them shows up here as banding across something uniform.
+    const opened = await open('flat.png');
+    const { result: history } = await engine.call('edit.history', { documentId: opened.id });
+    await apply(opened.id, {
+      kind: 'resize', width: history.width * 3, height: history.height * 3,
+    });
+    const { result: info, payload } = await engine.call('image.renderPreview', {
+      documentId: opened.id, maxWidth: history.width * 3, maxHeight: history.height * 3,
+    });
+
+    const centre = pixelAt(payload, info.stride, Math.round(info.width / 2), Math.round(info.height / 2));
+    for (let x = 4; x < info.width - 4; x += 7) {
+      const here = pixelAt(payload, info.stride, x, Math.round(info.height / 2));
+      assert.deepEqual(here, centre, `banding at x=${x}`);
+    }
+    await engine.call('image.close', { documentId: opened.id });
+  });
+
   await suite.check('a resize changes the document size', async () => {
     // gradient.png is 200 x 120.
     const opened = await open('gradient.png');

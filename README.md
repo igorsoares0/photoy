@@ -379,6 +379,62 @@ vez de escondido atrás de um padrão otimista.
 câmera utilizável não recebe slider nenhum, porque um slider que não move a
 foto é pior que a ausência dele.
 
+### Upscale, e o segundo modelo que não deu
+
+A §23 pede 2×, 4× e preservação de detalhes. O caminho óbvio era um modelo, e
+ele foi percorrido até o fim outra vez.
+
+**A licença fecha:** Real-ESRGAN é BSD-3-Clause sem cláusula separada para os
+pesos, lido no LICENSE e não num resumo. **O que não fecha é a procedência do
+export.** O repositório oficial publica só `.pth`; das vinte buscas por um ONNX,
+todas voltaram sem licença declarada no metadado, e as duas que declaram
+`bsd-3-clause` por tag são uploads individuais sem como verificar de que pesos
+vieram. Um re-export não rastreável não é coisa que se redistribui.
+
+**E a medição encerrou a discussão de qualquer jeito.** O export melhor
+documentado que achei — RRDBNet 23-block, o x4plus completo — custa **185 s por
+megapixel de entrada** nesta CPU, três vezes e meia o SCUNet:
+
+| entrada | saída | tempo |
+|---|---|---|
+| 800×600 | 3200×2400 | 1,5 min |
+| 1000×1000 | 4000×4000 | 3,1 min |
+| 3000×2000 | 12000×8000 | 18,5 min |
+
+Uma ampliação 4× também multiplica o buffer de trabalho por dezesseis: uma foto
+de 12 MP viraria 192 MP, que são 1,5 GB só de pixels.
+
+**O que entrou foi o filtro certo em vez do modelo.** A ampliação usava
+bilinear, que lê dois pixels por eixo e mistura — isto é, borra. Entrou
+**Lanczos-3**, que lê seis por eixo através de um sinc janelado e reconstrói o
+sinal entre as amostras em vez de mediar entre elas. Separável, em duas
+passagens, com o intermediário em ponto flutuante: arredondar para dezesseis
+bits entre elas jogaria fora exatamente a precisão que a segunda usa.
+
+Medido contra o gabarito — uma fotografia reduzida a um quarto e devolvida ao
+tamanho:
+
+| filtro | erro vs. original | detalhe preservado | tempo |
+|---|---|---|---|
+| **Lanczos-3** | 1,79 de 255 | **65,6%** | 82 ms |
+| bilinear | 1,95 de 255 | 54,8% | 79 ms |
+
+Vinte por cento mais detalhe recuperado por 4% mais tempo. Contra os 185 s/MP do
+modelo, são **duas mil vezes** mais barato — para uma diferença de qualidade que
+o modelo teria, mas que ninguém pode esperar dezoito minutos para ver.
+
+Isso melhora toda ampliação do produto, não só o botão: o zoom acima de 100% e
+qualquer resize para cima passam pelo mesmo caminho.
+
+**Dois testes, e ambos foram consertados depois de falharem em discriminar.** O
+primeiro comparava uma redução e uma ampliação empilhadas — e o fold da pilha
+pega o último resize, não a sequência, então os dois se cancelavam e o teste
+comparava a foto consigo mesma. O segundo media a largura da transição numa
+borda de alfa, e passava com bilinear também, porque o excesso do sinc bate no
+clamp de 0 e 255 e some. O que ficou mede a energia de detalhe de uma ida e
+volta materializada em disco: dá 7,2 com Lanczos e exatamente 5,0 com bilinear,
+verificado trocando o filtro para ver o teste falhar.
+
 ### Retrato
 
 A §24 pede oito ferramentas e um `Auto`. **Três já existiam**: ajuste e blur de

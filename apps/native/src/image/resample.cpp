@@ -1,6 +1,7 @@
 #include "image/resample.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -189,11 +190,142 @@ Image16 BilinearResize(const Image16& source, const Rect& region, int target_wid
   return result;
 }
 
+namespace {
+
+/// Lobes either side of centre. Three is the usual choice: two is noticeably
+/// softer and four costs a third more for a difference nobody sees.
+constexpr int kLanczosRadius = 3;
+
+double Sinc(double x) noexcept {
+  if (std::abs(x) < 1.0e-9) return 1.0;
+  const double pi_x = 3.14159265358979323846 * x;
+  return std::sin(pi_x) / pi_x;
+}
+
+/// The windowed sinc itself: a sinc multiplied by a wider sinc that brings it
+/// to zero at the edge of the window, so the kernel ends rather than being cut.
+double Lanczos(double x) noexcept {
+  if (std::abs(x) >= kLanczosRadius) return 0.0;
+  return Sinc(x) * Sinc(x / kLanczosRadius);
+}
+
+/// One axis worth of taps: which source samples a target sample reads, and how
+/// much of each. Precomputed per target position because every row repeats the
+/// same horizontal weights, and every column the same vertical ones.
+struct Taps {
+  int first = 0;
+  std::array<double, kLanczosRadius * 2> weight{};
+  int count = 0;
+};
+
+std::vector<Taps> PlanTaps(int source_length, int target_length, double offset) {
+  std::vector<Taps> plan(static_cast<std::size_t>(target_length));
+  const double step = static_cast<double>(source_length) / target_length;
+  for (int i = 0; i < target_length; ++i) {
+    const double centre = (i + 0.5) * step - 0.5;
+    Taps taps;
+    taps.first = static_cast<int>(std::floor(centre)) - kLanczosRadius + 1;
+    double total = 0.0;
+    for (int k = 0; k < kLanczosRadius * 2; ++k) {
+      const double weight = Lanczos(centre - (taps.first + k));
+      taps.weight[static_cast<std::size_t>(k)] = weight;
+      total += weight;
+    }
+    // Normalised so a flat region keeps its value: the weights of a windowed
+    // sinc do not sum to one on their own, and the error shows as banding.
+    if (std::abs(total) > 1.0e-9) {
+      for (double& weight : taps.weight) weight /= total;
+    }
+    taps.first += static_cast<int>(offset);
+    taps.count = kLanczosRadius * 2;
+    plan[static_cast<std::size_t>(i)] = taps;
+  }
+  return plan;
+}
+
+}  // namespace
+
+Image16 LanczosResize(const Image16& source, const Rect& region, int target_width,
+                      int target_height, const CancellationTokenPtr& token) {
+  if (target_width <= 0 || target_height <= 0) {
+    throw EngineException(error_code::kInternalError, "Invalid resample target",
+                          std::to_string(target_width) + "x" + std::to_string(target_height));
+  }
+  const Rect area = Intersect(region, Rect{0, 0, source.width(), source.height()});
+  if (area.empty()) {
+    throw EngineException(error_code::kInvalidRequest, "Nothing left to render",
+                          "the crop region falls outside the image");
+  }
+
+  const std::vector<Taps> horizontal = PlanTaps(area.width, target_width, area.x);
+  const std::vector<Taps> vertical = PlanTaps(area.height, target_height, area.y);
+
+  // The intermediate is target-wide and source-tall, holding premultiplied
+  // colour and alpha in floating point: rounding to sixteen bits between the
+  // two passes would throw away exactly the precision the second pass needs.
+  const std::size_t stride = static_cast<std::size_t>(target_width) * kChannels;
+  std::vector<float> intermediate(stride * static_cast<std::size_t>(area.height));
+
+  for (int y = 0; y < area.height; ++y) {
+    if (token->cancelled()) {
+      throw EngineException(error_code::kCancelled, "Render cancelled", "superseded");
+    }
+    const std::uint16_t* row = source.Row(area.y + y);
+    float* out = intermediate.data() + stride * static_cast<std::size_t>(y);
+    for (int x = 0; x < target_width; ++x) {
+      const Taps& taps = horizontal[static_cast<std::size_t>(x)];
+      double sum[kChannels] = {0.0, 0.0, 0.0, 0.0};
+      for (int k = 0; k < taps.count; ++k) {
+        const int sx = std::clamp(taps.first + k, area.x, area.x + area.width - 1);
+        const std::uint16_t* pixel = row + static_cast<std::size_t>(sx) * kChannels;
+        const double weight = taps.weight[static_cast<std::size_t>(k)];
+        // Premultiplied, so a transparent neighbour cannot drag its colour into
+        // a visible edge - the same reason the box filter does it.
+        const double alpha = pixel[3] / kMaxSample;
+        for (int c = 0; c < 3; ++c) sum[c] += pixel[c] * alpha * weight;
+        sum[3] += pixel[3] * weight;
+      }
+      float* target = out + static_cast<std::size_t>(x) * kChannels;
+      for (int c = 0; c < kChannels; ++c) target[c] = static_cast<float>(sum[c]);
+    }
+  }
+
+  Image16 result = Image16::Create(target_width, target_height);
+  for (int y = 0; y < target_height; ++y) {
+    if (token->cancelled()) {
+      throw EngineException(error_code::kCancelled, "Render cancelled", "superseded");
+    }
+    const Taps& taps = vertical[static_cast<std::size_t>(y)];
+    std::uint16_t* out = result.Row(y);
+    for (int x = 0; x < target_width; ++x) {
+      double sum[kChannels] = {0.0, 0.0, 0.0, 0.0};
+      for (int k = 0; k < taps.count; ++k) {
+        const int sy = std::clamp(taps.first + k - area.y, 0, area.height - 1);
+        const float* pixel = intermediate.data() + stride * static_cast<std::size_t>(sy) +
+                             static_cast<std::size_t>(x) * kChannels;
+        const double weight = taps.weight[static_cast<std::size_t>(k)];
+        for (int c = 0; c < kChannels; ++c) sum[c] += pixel[c] * weight;
+      }
+
+      std::uint16_t* target = out + static_cast<std::size_t>(x) * kChannels;
+      const double alpha = std::clamp(sum[3], 0.0, kMaxSample);
+      if (alpha <= 0.0) {
+        std::memset(target, 0, kChannels * sizeof(std::uint16_t));
+        continue;
+      }
+      const double unpremultiply = kMaxSample / alpha;
+      for (int c = 0; c < 3; ++c) target[c] = ClampToSample(sum[c] * unpremultiply);
+      target[3] = ClampToSample(alpha);
+    }
+  }
+  return result;
+}
+
 Image16 ResampleTo(const Image16& source, const Rect& region, int target_width,
                    int target_height, const CancellationTokenPtr& token) {
   const Rect area = Intersect(region, Rect{0, 0, source.width(), source.height()});
   const bool enlarging = target_width > area.width || target_height > area.height;
-  return enlarging ? BilinearResize(source, region, target_width, target_height, token)
+  return enlarging ? LanczosResize(source, region, target_width, target_height, token)
                    : DownscaleBox(source, region, target_width, target_height, token);
 }
 
