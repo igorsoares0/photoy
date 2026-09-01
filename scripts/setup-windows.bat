@@ -57,6 +57,15 @@ if not exist "%PHOTOY_ROOT%\.tooling\models\u2netp.onnx" (
     "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx"
   if errorlevel 1 exit /b 1
 )
+if not exist "%PHOTOY_ROOT%\.tooling\models\yunet.onnx" (
+  rem YuNet is MIT, stated by a LICENSE file inside its own model directory in
+  rem the OpenCV Zoo rather than inherited from the repository - so the weights
+  rem are covered and not only the code. Served through media. because the Zoo
+  rem keeps its models in git-lfs and the plain raw. URL returns a pointer.
+  curl -sL -o "%PHOTOY_ROOT%\.tooling\models\yunet.onnx" ^
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+  if errorlevel 1 exit /b 1
+)
 if not exist "%PHOTOY_ROOT%\.tooling\models\lama.onnx" (
   echo Downloading LaMa inpainting model ^(92 MB, Apache-2.0^)...
   curl -sL -o "%PHOTOY_ROOT%\.tooling\models\lama.onnx" ^

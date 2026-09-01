@@ -14,6 +14,7 @@ import {
   type StoredMask,
 } from '@photoy/ipc';
 import type {
+  FaceDetection,
   ImageAnalysis,
   Preset,
   DocumentInfo,
@@ -51,6 +52,8 @@ const api: PhotoyApi = {
 
   segment: (documentId: string) =>
     ipcRenderer.invoke(Channels.aiSegment, documentId) as Promise<ApiResult<SegmentResult>>,
+  detectFaces: (documentId: string) =>
+    ipcRenderer.invoke(Channels.aiDetectFaces, documentId) as Promise<ApiResult<FaceDetection>>,
   storeMask: (documentId: string, width: number, height: number, coverage: Uint8Array) =>
     ipcRenderer.invoke(Channels.maskStore, documentId, width, height, coverage) as Promise<
       ApiResult<SegmentResult>

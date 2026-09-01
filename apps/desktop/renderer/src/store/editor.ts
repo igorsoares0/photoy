@@ -3,6 +3,7 @@ import type {
   AdjustmentKey,
   Adjustments,
   BlendMode,
+  Face,
   FillColor,
   FillKind,
   Layer,
@@ -26,6 +27,16 @@ import {
 } from '../lib/enhance';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
+import { brushMaskSize } from '../lib/brush';
+import {
+  AUTO_STRENGTHS,
+  eyesMask,
+  faceMask,
+  skinMask,
+  teethMask,
+  toolAdjustments,
+  type PortraitToolId,
+} from '../lib/portrait';
 
 export interface EditorError {
   code: string;
@@ -41,6 +52,12 @@ export interface PreviewState {
   scale: number;
 }
 
+export interface PortraitState {
+  faces: Face[];
+  /** Layer built for each tool, and how far it is pushed. */
+  tools: Partial<Record<PortraitToolId, { layerId: number; strength: number }>>;
+}
+
 export type Busy =
   | 'opening'
   | 'rendering'
@@ -48,6 +65,7 @@ export type Busy =
   | 'segmenting'
   | 'filling'
   | 'analysing'
+  | 'detecting'
   | null;
 
 /** What the export dialog collects before a destination is chosen. */
@@ -189,6 +207,18 @@ interface EditorState {
   setLayerMask(id: number, mask: Mask, continuing?: boolean): Promise<void>;
   /** Runs segmentation and attaches the result to the layer as its mask. */
   segmentIntoMask(id: number): Promise<void>;
+
+  /**
+   * The faces found in the document, and which layer each portrait tool built.
+   *
+   * Kept so that moving a slider is only an adjustment: the detection and the
+   * region are done once, and afterwards the tool is an ordinary masked layer
+   * that undo, presets and the project all already understand.
+   */
+  portrait: PortraitState | null;
+  detectFaces(): Promise<void>;
+  setPortraitTool(tool: PortraitToolId, strength: number, continuing: boolean): Promise<void>;
+  applyPortraitAuto(): Promise<void>;
   /** Segments the subject and cuts everything else away, as one action. */
   removeBackground(): Promise<void>;
   setLayerFill(id: number, fill: FillKind, color?: FillColor, blur?: number): Promise<void>;
@@ -356,6 +386,74 @@ function adoptProject(set: SetState, get: GetState, opened: OpenedProject): void
     lastExport: null,
     busy: null,
   });
+}
+
+/** What each portrait tool's layer is called in the panel and the history. */
+const PORTRAIT_LABELS: Record<PortraitToolId, string> = {
+  skin: 'Pele',
+  light: 'Luz do rosto',
+  eyes: 'Olhos',
+  teeth: 'Dentes',
+};
+
+/** Applied in this order, so the layers stack the way the face is built up. */
+const PORTRAIT_TOOLS: PortraitToolId[] = ['skin', 'light', 'eyes', 'teeth'];
+
+/** Side of the preview the teeth region reads its pixels from. */
+const TEETH_SAMPLE_SIDE = 512;
+
+/**
+ * The coverage for one tool, at the resolution masks are stored at.
+ *
+ * Only the teeth region needs the photograph itself, so only it pays for a
+ * preview - the other three are geometry and cost nothing but arithmetic.
+ */
+async function buildPortraitCoverage(
+  get: () => EditorState,
+  tool: PortraitToolId,
+  faces: Face[],
+): Promise<{ width: number; height: number; data: Uint8Array } | null> {
+  const state = get();
+  const document = state.document;
+  if (document === null) return null;
+
+  const natural = {
+    width: state.history?.naturalWidth ?? document.image.width,
+    height: state.history?.naturalHeight ?? document.image.height,
+  };
+  const { width, height } = brushMaskSize(natural.width, natural.height);
+  if (width === 0 || height === 0) return null;
+
+  if (tool === 'skin') return { width, height, data: skinMask(faces, width, height) };
+  if (tool === 'eyes') return { width, height, data: eyesMask(faces, width, height) };
+  if (tool === 'light') return { width, height, data: faceMask(faces, width, height) };
+
+  const preview = await window.photoy.renderPreview({
+    documentId: document.id,
+    maxWidth: TEETH_SAMPLE_SIDE,
+    maxHeight: TEETH_SAMPLE_SIDE,
+  });
+  if (!preview.ok) return null;
+
+  const pixels = new Uint8Array(preview.value.pixels);
+  const { stride, width: pw, height: ph } = preview.value;
+  const sample = (fx: number, fy: number) => {
+    const x = Math.min(pw - 1, Math.max(0, Math.round(fx * pw - 0.5)));
+    const y = Math.min(ph - 1, Math.max(0, Math.round(fy * ph - 0.5)));
+    const at = y * stride + x * 4;
+    const r = (pixels[at] ?? 0) / 255;
+    const g = (pixels[at + 1] ?? 0) / 255;
+    const b = (pixels[at + 2] ?? 0) / 255;
+    const high = Math.max(r, g, b);
+    const low = Math.min(r, g, b);
+    // Luma weighted the way the eye responds, and saturation as the HSV one:
+    // both are what "bright" and "colourful" mean to somebody looking at teeth.
+    return {
+      luma: 0.2126 * r + 0.7152 * g + 0.0722 * b,
+      saturation: high > 0 ? (high - low) / high : 0,
+    };
+  };
+  return { width, height, data: teethMask(faces, width, height, sample) };
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -696,6 +794,121 @@ export const useEditor = create<EditorState>((set, get) => ({
       await window.photoy.applyEdit(document.id, { kind: 'setLayerMask', layerId: id, mask }, continuing),
       continuing,
     );
+  },
+
+  portrait: null,
+
+  detectFaces: async () => {
+    const document = get().document;
+    if (document === null) return;
+
+    set({ busy: 'detecting', error: null });
+    const found = await window.photoy.detectFaces(document.id);
+    if (!found.ok) {
+      set({ busy: null, error: found.error });
+      return;
+    }
+    // Tools already built are kept: a re-detection after a crop should move the
+    // regions, not throw away the work that was done with them.
+    set({ busy: null, portrait: { faces: found.value.faces, tools: get().portrait?.tools ?? {} } });
+  },
+
+  setPortraitTool: async (tool, strength, continuing) => {
+    const document = get().document;
+    const state = get();
+    if (document === null || state.portrait === null || state.portrait.faces.length === 0) return;
+
+    const existing = state.portrait.tools[tool];
+    const adjustments: Adjustments = {
+      ...NEUTRAL_ADJUSTMENTS,
+      ...toolAdjustments(tool, strength),
+    };
+
+    // The layer, its mask and its name are made once. After that a slider is an
+    // ordinary adjustment on an ordinary layer, which is what keeps dragging
+    // one cheap - no detection, no region, no upload.
+    if (existing !== undefined) {
+      set({
+        portrait: {
+          ...state.portrait,
+          tools: { ...state.portrait.tools, [tool]: { ...existing, strength } },
+        },
+      });
+      await adoptHistory(
+        set,
+        get,
+        await window.photoy.applyEdit(
+          document.id,
+          { kind: 'adjust', layerId: existing.layerId, adjustments },
+          continuing,
+        ),
+        continuing,
+      );
+      return;
+    }
+
+    const coverage = await buildPortraitCoverage(get, tool, state.portrait.faces);
+    if (coverage === null) return;
+
+    const before = get().history?.layers.map((layer) => layer.id) ?? [];
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'addLayer',
+        name: PORTRAIT_LABELS[tool],
+      }),
+    );
+    const created = get().history?.layers.find((layer) => !before.includes(layer.id));
+    if (created === undefined) return;
+
+    const stored = await window.photoy.storeMask(
+      document.id,
+      coverage.width,
+      coverage.height,
+      coverage.data,
+    );
+    if (!stored.ok) {
+      set({ error: stored.error });
+      return;
+    }
+    const history = get().history;
+    await get().setLayerMask(created.id, {
+      ...NO_MASK,
+      kind: 'raster',
+      raster: stored.value.raster,
+      rasterWidth: history?.naturalWidth ?? coverage.width,
+      rasterHeight: history?.naturalHeight ?? coverage.height,
+    });
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'adjust',
+        layerId: created.id,
+        adjustments,
+      }),
+    );
+
+    const now = get().portrait;
+    if (now !== null) {
+      set({
+        portrait: {
+          ...now,
+          tools: { ...now.tools, [tool]: { layerId: created.id, strength } },
+        },
+      });
+    }
+  },
+
+  applyPortraitAuto: async () => {
+    if (get().portrait === null) await get().detectFaces();
+    if ((get().portrait?.faces.length ?? 0) === 0) return;
+    // Sequentially, because each one creates a layer and the engine assigns the
+    // identifiers; issuing them together would race for the same slot.
+    for (const tool of PORTRAIT_TOOLS) {
+      await get().setPortraitTool(tool, AUTO_STRENGTHS[tool], false);
+    }
   },
 
   segmentIntoMask: async (id) => {

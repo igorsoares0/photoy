@@ -14,6 +14,7 @@ import { Database } from '../store/database';
 import type {
   DocumentInfo,
   EditHistory,
+  FaceDetection,
   ExportResult,
   Operation,
   ImageAnalysis,
@@ -294,6 +295,11 @@ export function registerIpcHandlers(
 
   handle(Channels.aiSegment, async (documentId: string) => {
     const { result } = await engine.call<SegmentResult>('ai.segment', { documentId });
+    return result;
+  });
+
+  handle(Channels.aiDetectFaces, async (documentId: string) => {
+    const { result } = await engine.call<FaceDetection>('ai.detectFaces', { documentId });
     return result;
   });
 

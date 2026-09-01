@@ -14,6 +14,7 @@ import { PresetsPanel } from './PresetsPanel';
 import { EnhancePanel } from './EnhancePanel';
 import { ResizePanel } from './ResizePanel';
 import { PanelSection } from './PanelSection';
+import { PortraitPanel } from './PortraitPanel';
 import { RawPanel } from './RawPanel';
 import { Slider } from './Slider';
 
@@ -232,6 +233,7 @@ export function AdjustmentsPanel(): React.JSX.Element {
                 ) : null}
                 {adjustmentLayer !== null ? <MaskPanel layer={adjustmentLayer} /> : null}
                 <EnhancePanel />
+                <PortraitPanel />
                 <PresetsPanel />
                 {/* Before the tone controls because that is the order the
                     processing happens in: a raw file is balanced first, and

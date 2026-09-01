@@ -16,6 +16,7 @@
 #include "edit/serialize.h"
 #include "ai/denoiser.h"
 #include "ai/inpainter.h"
+#include "ai/face_detector.h"
 #include "ai/segmenter.h"
 #include "project/project.h"
 #include "export/encoder.h"
@@ -293,7 +294,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                      method == "image.analyse" || method == "image.open" ||
                      method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
-                     method == "project.save" || method == "ai.segment";
+                     method == "project.save" || method == "ai.segment" ||
+                     method == "ai.detectFaces";
   if (!known) {
     return transport_.Write(MakeFailure(id, error_code::kInvalidRequest, "Unknown method", method));
   }
@@ -315,6 +317,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                        response = SaveProjectJob(id, params);
                      } else if (method == "ai.segment") {
                        response = SegmentJob(id, params, token);
+                     } else if (method == "ai.detectFaces") {
+                       response = DetectFacesJob(id, params, token);
                      } else if (method == "ai.inpaint") {
                        response = InpaintJob(id, params, token);
                      } else if (method == "background.load") {
@@ -363,7 +367,8 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
       return estimate::Open(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
-    if (method == "ai.segment" || method == "ai.inpaint" || method == "ai.denoise") {
+    if (method == "ai.segment" || method == "ai.inpaint" || method == "ai.denoise" ||
+        method == "ai.detectFaces") {
       return ai::ModelManager::MemoryEstimate(method);
     }
     if (method == "project.save") {
@@ -641,6 +646,53 @@ FittedPatches Engine::FitPatches(Document& document, const PreviewPlan& plan,
     fitted.emplace(layer.patch, std::move(ready));
   }
   return fitted;
+}
+
+/**
+ * Where the faces are, and nothing about what to do with them.
+ *
+ * The engine measures and the interface decides, the same split auto enhance
+ * uses: this reports boxes and five points, and every portrait tool is built
+ * from those by code that can be changed without a rebuild. It deliberately
+ * does not produce a mask - a mask commits to what a tool is for, and eight
+ * tools want eight different regions out of the same five points.
+ */
+protocol::Frame Engine::DetectFacesJob(std::int64_t id, const json& params,
+                                       const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::vector<Operation> operations = document->ActiveOperations();
+
+  // Detection runs on the document as it stands, geometry included, so the
+  // coordinates line up with what is on screen rather than with the file.
+  const int limit = std::max(64, OptionalInt(params, "maxSide", 2048));
+  const PreviewPlan plan =
+      PlanPreview(operations, document->source.width(), document->source.height(), limit, limit);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 rendered = RenderGeometry(*developed, plan, token);
+
+  const std::shared_ptr<ai::Session> session = models_.Acquire("face");
+  const std::vector<ai::Face> faces = ai::DetectFaces(rendered, *session, token);
+
+  json listed = json::array();
+  for (const ai::Face& face : faces) {
+    const auto point = [](const ai::Face::Point& p) {
+      return json{{"x", p.x}, {"y", p.y}};
+    };
+    listed.push_back(json{{"x", face.x},
+                          {"y", face.y},
+                          {"width", face.width},
+                          {"height", face.height},
+                          {"score", face.score},
+                          {"rightEye", point(face.right_eye)},
+                          {"leftEye", point(face.left_eye)},
+                          {"nose", point(face.nose)},
+                          {"rightMouth", point(face.right_mouth)},
+                          {"leftMouth", point(face.left_mouth)}});
+  }
+  log::Info("detected " + std::to_string(faces.size()) + " face(s) in " + document->id);
+
+  return MakeSuccess(id, json{{"documentId", document->id}, {"faces", std::move(listed)}});
 }
 
 protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,

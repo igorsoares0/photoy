@@ -379,6 +379,73 @@ vez de escondido atrás de um padrão otimista.
 câmera utilizável não recebe slider nenhum, porque um slider que não move a
 foto é pior que a ausência dele.
 
+### Retrato
+
+A §24 pede oito ferramentas e um `Auto`. **Três já existiam**: ajuste e blur de
+fundo são a camada matte com preenchimento `kBlur`, construída para remoção de
+fundo, e remoção de imperfeições é o patch do LaMa, construído para remoção de
+objeto. As outras cinco não precisaram de código novo de pixel nenhum.
+
+**O modelo é o YuNet**, do OpenCV Zoo. A licença fecha e o detalhe importa: ele
+tem um `LICENSE` **MIT dentro da própria pasta do modelo**, não herdado do
+repositório — então os pesos estão cobertos e não só o código em volta. O
+download é servido por `media.githubusercontent.com` porque o Zoo guarda os
+modelos em git-lfs e a URL `raw.` devolve um ponteiro de 131 bytes, e o sha256
+é conferido contra o que o repositório registra.
+
+**E ele não é a parede de inferência:** 136 ms na primeira vez, **31 ms**
+depois, com entrada fixa de 640×640 — o custo não depende do tamanho da foto,
+como no U²-Net. Ao lado dos 4 s do LaMa e dos 53 s/MP do SCUNet, é de graça.
+
+O YuNet responde em **doze tensores** — três escalas × classificação,
+objetividade, caixa e cinco pontos — então o `Session` ganhou saída múltipla. A
+decodificação das âncoras e o NMS ficaram separados da inferência, em função
+pura: é onde os erros moram, e assim dá para testá-los sem o modelo.
+
+**O corte é o mesmo do auto enhance: o engine mede, a interface decide.** O
+`ai.detectFaces` reporta caixas e cinco pontos e para aí. Deliberadamente não
+produz máscara — uma máscara já se compromete com o que a ferramenta é, e oito
+ferramentas querem oito regiões diferentes dos mesmos cinco pontos. As regiões
+são desenhadas no renderer e sobem por `mask.store`, o mesmo caminho do pincel,
+então o resto da §24 é TypeScript testável que muda sem recompilar C++.
+
+Cada ferramenta é **região gerada + ajustes que já existem**:
+
+| ferramenta | região | ajustes |
+|---|---|---|
+| Pele | oval do rosto menos olhos e boca | `denoise` + `denoiseDetail`, `clarity` negativa |
+| Luz do rosto | oval do rosto | `exposure`, `shadows` |
+| Olhos | elipses nos dois pontos | `clarity`, `exposure`, `sharpen` |
+| Dentes | boca, filtrada por claro e sem cor | `saturation` negativa, `brightness` |
+
+Duas decisões que valem registro. **Recortar olhos e boca da máscara de pele** é
+a maior parte da diferença entre suavizar e virar plástico: com os olhos
+suavizados junto, o rosto para de ler como rosto. E **os dentes são a única
+região que a geometria não desenha** — entre os cantos da boca há tanto dente
+quanto lábio, e clarear lábio é exatamente o erro. O que separa os dois não é
+forma, é cor: dente é a parte clara e sem cor de uma boca, lábio é a parte
+colorida, qualquer que seja o formato de cada um. Uma boca fechada rende quase
+nada, o que está certo — não há o que clarear ali.
+
+A borda usa smoothstep e não rampa linear, porque uma rampa linear deixa um
+vinco visível onde a queda começa: o olho lê a mudança de inclinação, não o
+valor.
+
+**Medido numa foto real.** Detecção em 135 ms, e as regiões cobrem 9,4% da foto
+(pele), 17,3% (rosto), 1,1% (olhos), 1,0% (dentes). Com o `Auto` aplicado, a
+diferença média dentro da caixa do rosto é 4,84 de 255 e fora dela 0,23 — vinte
+e uma vezes mais dentro que fora, e o que sobra fora é ruído de recompressão.
+
+**A limitação, dita em vez de escondida:** cinco pontos não são landmarks
+densos. O oval do rosto é construído da caixa mais a linha dos olhos, que dá a
+inclinação, e não contornado. Para as "ferramentas simples de retrato" que a
+seção pede isso serve; se a suavização vazar no cabelo de alguém, é coisa que se
+mede e se aperta, não que se redesenha.
+
+**O `Auto` é conservador de propósito** — 40 de pele, 30 de olhos, 35 de dentes,
+25 de luz. Um retrato que obviamente passou por retoque é uma fotografia pior
+que um que não passou, e quem olha com mais atenção é a pessoa retratada.
+
 ### Inferência local
 
 O engine carrega e roda modelos ONNX. A primeira operação é a **segmentação**:

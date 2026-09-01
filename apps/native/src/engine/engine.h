@@ -71,6 +71,8 @@ class Engine {
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);
   protocol::Frame OpenProject(std::int64_t id, const nlohmann::json& params);
   protocol::Frame SaveProjectJob(std::int64_t id, const nlohmann::json& params);
+  protocol::Frame DetectFacesJob(std::int64_t id, const nlohmann::json& params,
+                                const CancellationTokenPtr& token);
   protocol::Frame SegmentJob(std::int64_t id, const nlohmann::json& params,
                              const CancellationTokenPtr& token);
 

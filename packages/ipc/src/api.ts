@@ -1,4 +1,5 @@
 import type {
+  FaceDetection,
   ImageAnalysis,
   Preset,
   DocumentInfo,
@@ -122,6 +123,15 @@ export interface PhotoyApi {
    * document size it was made for.
    */
   segment(documentId: string): Promise<ApiResult<SegmentResult>>;
+
+  /**
+   * Finds the faces in the document as it currently stands.
+   *
+   * Reports positions and nothing else: no mask, because eight portrait tools
+   * want eight different regions out of the same five points, and deciding
+   * which belongs to the interface.
+   */
+  detectFaces(documentId: string): Promise<ApiResult<FaceDetection>>;
 
   /**
    * Hands a painted mask to the engine and gets back its identifier.

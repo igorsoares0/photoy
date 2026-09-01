@@ -32,7 +32,7 @@ struct CatalogueEntry {
   const char* source;
 };
 
-constexpr std::array<CatalogueEntry, 3> kCatalogue{{
+constexpr std::array<CatalogueEntry, 4> kCatalogue{{
     {"segmentation", "u2netp.onnx", "Apache-2.0", "U^2-Net"},
     // LaMa: advimman/lama is Apache-2.0 with no separate clause for the
     // weights, and OpenCV redistributes this export under the same, checked
@@ -47,6 +47,12 @@ constexpr std::array<CatalogueEntry, 3> kCatalogue{{
     // the name recorded inside the graph - which is why the file keeps the
     // name it was published under rather than a tidier one.
     {"denoise", "scunet_color_real_psnr.onnx", "Apache-2.0", "SCUNet (blind real, PSNR)"},
+    // YuNet carries its own LICENSE inside the model directory of the OpenCV
+    // Zoo rather than inheriting the repository's, and that file is MIT - so
+    // the weights are covered and not only the code around them. Checked by
+    // reading it, and the download is verified against the hash the repository
+    // records for the file.
+    {"face", "yunet.onnx", "MIT", "YuNet (OpenCV Zoo)"},
 }};
 
 std::wstring Widen(const std::string& utf8) {
@@ -73,6 +79,7 @@ struct Session::Impl {
   std::string input_name;
   std::string output_name;
   std::vector<std::string> input_names;
+  std::vector<std::string> output_names;
 
   Impl(const std::string& path, const std::string& name)
       // Errors only: this build of LaMa carries unused initialisers, and the
@@ -91,6 +98,9 @@ struct Session::Impl {
     output_name = session.GetOutputNameAllocated(0, allocator).get();
     for (std::size_t i = 0; i < session.GetInputCount(); ++i) {
       input_names.emplace_back(session.GetInputNameAllocated(i, allocator).get());
+    }
+    for (std::size_t i = 0; i < session.GetOutputCount(); ++i) {
+      output_names.emplace_back(session.GetOutputNameAllocated(i, allocator).get());
     }
   }
 };
@@ -164,6 +174,34 @@ std::vector<float> Session::RunNamed(const std::vector<std::string>& names,
     const std::size_t count = first.GetTensorTypeAndShapeInfo().GetElementCount();
     const float* values = first.GetTensorData<float>();
     return std::vector<float>(values, values + count);
+  } catch (const Ort::Exception& failure) {
+    throw EngineException(error_code::kInternalError, "The model failed to run", failure.what());
+  }
+}
+
+std::vector<std::pair<std::string, std::vector<float>>> Session::RunAll(
+    const std::vector<float>& input, const std::array<std::int64_t, 4>& shape) {
+  auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  try {
+    Ort::Value tensor = Ort::Value::CreateTensor<float>(
+        memory, const_cast<float*>(input.data()), input.size(), shape.data(), shape.size());
+
+    std::vector<const char*> names;
+    names.reserve(impl_->output_names.size());
+    for (const std::string& name : impl_->output_names) names.push_back(name.c_str());
+
+    const char* input_names[] = {impl_->input_name.c_str()};
+    auto outputs = impl_->session.Run(Ort::RunOptions{nullptr}, input_names, &tensor, 1,
+                                      names.data(), names.size());
+
+    std::vector<std::pair<std::string, std::vector<float>>> result;
+    result.reserve(outputs.size());
+    for (std::size_t i = 0; i < outputs.size(); ++i) {
+      const std::size_t count = outputs[i].GetTensorTypeAndShapeInfo().GetElementCount();
+      const float* values = outputs[i].GetTensorData<float>();
+      result.emplace_back(impl_->output_names[i], std::vector<float>(values, values + count));
+    }
+    return result;
   } catch (const Ort::Exception& failure) {
     throw EngineException(error_code::kInternalError, "The model failed to run", failure.what());
   }

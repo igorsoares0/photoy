@@ -23,6 +23,7 @@ export const Channels = {
   recoveryTake: 'photoy:recovery.take',
   recoveryDiscard: 'photoy:recovery.discard',
   aiSegment: 'photoy:ai.segment',
+  aiDetectFaces: 'photoy:ai.detectFaces',
   maskStore: 'photoy:mask.store',
   maskFetch: 'photoy:mask.fetch',
   aiInpaint: 'photoy:ai.inpaint',

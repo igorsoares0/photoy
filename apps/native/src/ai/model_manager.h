@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace photoy::ai {
@@ -55,6 +56,16 @@ class Session {
   std::vector<float> RunNamed(const std::vector<std::string>& names,
                               const std::vector<std::vector<float>>& inputs,
                               const std::vector<std::array<std::int64_t, 4>>& shapes);
+
+  /**
+   * Runs the model and returns every output, keyed by the name it declares.
+   *
+   * For a model whose answer is spread across several tensors rather than
+   * concentrated in one: a detector reports boxes, scores and keypoints at
+   * three scales, and none of the twelve is the answer on its own.
+   */
+  std::vector<std::pair<std::string, std::vector<float>>> RunAll(
+      const std::vector<float>& input, const std::array<std::int64_t, 4>& shape);
 
   /// Input names the model declares, in its own order.
   const std::vector<std::string>& input_names() const noexcept { return input_names_; }
