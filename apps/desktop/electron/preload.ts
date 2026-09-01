@@ -90,6 +90,8 @@ const api: PhotoyApi = {
     ipcRenderer.invoke(Channels.editHistory, documentId) as Promise<ApiResult<EditHistory>>,
 
   openProject: () => ipcRenderer.invoke(Channels.projectOpen) as Promise<ApiResult<OpenedProject | null>>,
+  openProjectPath: (candidate: string) =>
+    ipcRenderer.invoke(Channels.projectOpenPath, candidate) as Promise<ApiResult<OpenedProject>>,
   saveProject: () => ipcRenderer.invoke(Channels.projectSave) as Promise<ApiResult<ProjectState | null>>,
   saveProjectAs: () =>
     ipcRenderer.invoke(Channels.projectSaveAs) as Promise<ApiResult<ProjectState | null>>,

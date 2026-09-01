@@ -157,7 +157,15 @@ export interface PhotoyApi {
   savePreset(preset: Omit<Preset, 'builtIn'>): Promise<ApiResult<Preset[]>>;
   deletePreset(id: string): Promise<ApiResult<Preset[]>>;
 
-  /** Files opened before, newest first, with the ones that vanished dropped. */
+  /** Opens a project by path, for the recent list. */
+  openProjectPath(path: string): Promise<ApiResult<OpenedProject>>;
+
+  /**
+   * Files opened before, newest first, with the ones that vanished dropped.
+   *
+   * A photograph is replaced by the project saved from it: once the work
+   * exists, offering the untouched picture is offering to start again.
+   */
   listRecent(): Promise<ApiResult<string[]>>;
 
   /**

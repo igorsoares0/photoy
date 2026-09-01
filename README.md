@@ -262,6 +262,31 @@ em tons de cinza por máscara — em tons de cinza porque é o que uma máscara 
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
 
+### Não perder trabalho
+
+Um relato de uso encontrou três buracos que os testes não encontrariam, porque
+nenhum deles está no engine. O engine persiste tudo: os treze ajustes sobrevivem
+a salvar e reabrir idênticos bit a bit, e há teste disso. O que faltava era em
+volta.
+
+**A aplicação fechava descartando edições sem perguntar.** O autosave é uma rede
+contra queda e é limpo numa saída limpa, justamente porque uma saída limpa
+deveria significar que o usuário teve a chance de decidir — só que essa chance
+não existia. Agora a janela pergunta, e um salvamento cancelado no diálogo de
+arquivo não conta como salvo: a janela fica aberta em vez de tomar o silêncio
+por consentimento.
+
+**Um projeto salvo não entrava nos recentes**, então o único caminho de volta a
+ele era o diálogo de arquivo — a lista que acabara de ser construída não ajudava
+em nada.
+
+**E uma foto não lembrava do projeto dela.** Abrir `foto.jpg` pelos recentes dava
+a foto crua mesmo existindo um `foto.myphoto` ao lado com todo o trabalho. Agora
+salvar registra o vínculo e **o projeto toma o lugar da foto na lista**: uma vez
+que o trabalho existe, oferecer a fotografia intocada é oferecer recomeçar. A
+lista carrega os dois tipos, marcados por glifo, e cada um abre pela porta certa
+— ler um projeto como se fosse foto perderia a pilha inteira.
+
 ### Presets, e o banco que eles pediram
 
 A §25 abre com *"presets devem existir desde o lançamento"*, e a §30 pede SQLite

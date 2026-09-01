@@ -26,6 +26,7 @@ export const Channels = {
   maskStore: 'photoy:mask.store',
   maskFetch: 'photoy:mask.fetch',
   aiInpaint: 'photoy:ai.inpaint',
+  projectOpenPath: 'photoy:project.openPath',
   backgroundChoose: 'photoy:background.choose',
   presetList: 'photoy:preset.list',
   presetSave: 'photoy:preset.save',

@@ -22,7 +22,12 @@ import type {
 } from '@photoy/types';
 import { existsSync } from 'node:fs';
 import { EngineCallError, type EngineClient } from '../engine/engine-client.js';
-import { PathRejected, resolveReadablePath, resolveWritablePath } from './paths.js';
+import {
+  PathRejected,
+  resolveProjectPath,
+  resolveReadablePath,
+  resolveWritablePath,
+} from './paths.js';
 import type { Recovery, Session } from './session.js';
 
 const PROJECT_FILTERS = [{ name: 'Projeto Photoy', extensions: ['myphoto'] }];
@@ -59,12 +64,18 @@ function handle<T>(channel: string, run: (...args: never[]) => Promise<T>): void
   });
 }
 
+/** What the main process needs from the handlers beyond registering them. */
+export interface IpcSurface {
+  /** Saves the open document, asking for a destination if it has none. */
+  saveCurrent(): Promise<boolean>;
+}
+
 export function registerIpcHandlers(
   engine: EngineClient,
   session: Session,
   recovery: Recovery,
   database: Database,
-): void {
+): IpcSurface {
   const announce = () => {
     const window = BrowserWindow.getAllWindows()[0];
     window?.webContents.send(Events.projectChanged, session.state());
@@ -84,6 +95,7 @@ export function registerIpcHandlers(
     );
     const { history, ...document } = result;
     session.open(document.id, document.image.fileName, projectPath);
+    database.rememberFile(projectPath);
     announce();
     return { document, history, path: projectPath };
   };
@@ -91,6 +103,13 @@ export function registerIpcHandlers(
   const saveTo = async (projectPath: string): Promise<ProjectState> => {
     if (session.documentId === null) throw new PathRejected('Nothing to save', 'no document');
     await engine.call('project.save', { documentId: session.documentId, path: projectPath });
+    // The work now lives in the project, so that is what the recent list should
+    // offer. Leaving the photograph there would offer to start again.
+    if (session.sourcePath !== null) {
+      database.rememberProject(session.sourcePath, projectPath);
+      database.forgetFile(session.sourcePath);
+    }
+    database.rememberFile(projectPath);
     session.path = projectPath;
     session.dirty = false;
     // The unfinished session is only meaningful until the work is somewhere
@@ -120,7 +139,7 @@ export function registerIpcHandlers(
     const { result } = await engine.call<DocumentInfo>('image.open', { path: filePath });
     // A photograph opened directly is not yet a project: it has no path to save
     // back to, and the first save has to ask for one.
-    session.open(result.id, result.image.fileName, null);
+    session.open(result.id, result.image.fileName, null, filePath);
     database.rememberFile(filePath);
     announce();
     return result;
@@ -129,7 +148,7 @@ export function registerIpcHandlers(
   handle(Channels.imageOpenPath, async (candidate: string): Promise<DocumentInfo> => {
     const filePath = resolveReadablePath(candidate);
     const { result } = await engine.call<DocumentInfo>('image.open', { path: filePath });
-    session.open(result.id, result.image.fileName, null);
+    session.open(result.id, result.image.fileName, null, filePath);
     database.rememberFile(filePath);
     announce();
     return result;
@@ -256,6 +275,10 @@ export function registerIpcHandlers(
     return target === null ? null : saveTo(target);
   });
 
+  handle(Channels.projectOpenPath, async (candidate: string): Promise<OpenedProject> =>
+    openProjectAt(resolveProjectPath(candidate)),
+  );
+
   handle(Channels.projectState, async () => session.state());
 
   handle(Channels.recoveryTake, async (): Promise<OpenedProject | null> => {
@@ -309,6 +332,14 @@ export function registerIpcHandlers(
   // Paths are checked as they go out rather than as they come in: a file can
   // be moved or deleted between one run and the next, and offering to open
   // something that is no longer there is worse than not offering it.
+  const saveCurrent = async (): Promise<boolean> => {
+    if (session.documentId === null) return true;
+    const target = session.path ?? (await chooseProjectPath());
+    if (target === null) return false;
+    await saveTo(target);
+    return true;
+  };
+
   handle(Channels.recentList, async () => {
     const remembered = database.recentFiles();
     const alive: string[] = [];
@@ -350,6 +381,8 @@ export function registerIpcHandlers(
     database.deletePreset(id);
     return database.listPresets();
   });
+
+  return { saveCurrent };
 }
 
 /** Suggests an export name derived from the source file. */

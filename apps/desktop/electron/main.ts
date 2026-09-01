@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import path from 'node:path';
 import { Channels, Events } from '@photoy/ipc';
 import { EngineClient } from './engine/engine-client.js';
 import { locateEngine } from './engine/locate.js';
 import { Database } from './store/database';
-import { registerIpcHandlers } from './ipc/handlers.js';
+import { registerIpcHandlers, type IpcSurface } from './ipc/handlers.js';
 import { Recovery, Session } from './ipc/session.js';
 import { resolveReadablePath } from './ipc/paths.js';
 import { createMainWindow } from './windows/main-window.js';
@@ -25,6 +25,9 @@ let pendingOpenPath: string | null = null;
 const openSession = new Session();
 let recovery: Recovery | null = null;
 let database: Database | null = null;
+let ipc: IpcSurface | null = null;
+/** Set once the user has answered the question below, so the second close goes through. */
+let closeConfirmed = false;
 let autosaveTimer: NodeJS.Timeout | null = null;
 
 /**
@@ -58,6 +61,46 @@ async function autosave(engine: EngineClient): Promise<void> {
     // A failed autosave must not disturb the session it is protecting.
     process.stderr.write(`[photoy] autosave failed: ${String(error)}\n`);
   }
+}
+
+/**
+ * Asks before closing a window with edits that are not in a project yet.
+ *
+ * Without this the application quietly throws the work away: the autosave is a
+ * crash net and is cleared on a clean exit, precisely because a clean exit is
+ * supposed to mean the user had the chance to decide. This is that chance.
+ */
+function guardAgainstLosingWork(window: BrowserWindow): void {
+  window.on('close', (event) => {
+    if (closeConfirmed || !openSession.dirty || openSession.documentId === null) return;
+    event.preventDefault();
+
+    void (async () => {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'warning',
+        buttons: ['Salvar', 'Fechar sem salvar', 'Cancelar'],
+        defaultId: 0,
+        cancelId: 2,
+        message: 'Salvar as alterações antes de fechar?',
+        detail:
+          `As edições de ${openSession.fileName} ainda não estão em um projeto. ` +
+          'Fechando sem salvar, elas se perdem.',
+      });
+      if (response === 2) return;
+      if (response === 0) {
+        try {
+          // A save that was cancelled at the file dialog is not a save, and the
+          // window must stay open rather than take the silence for consent.
+          if (ipc !== null && !(await ipc.saveCurrent())) return;
+        } catch (error) {
+          process.stderr.write(`[photoy] save before close failed: ${String(error)}\n`);
+          return;
+        }
+      }
+      closeConfirmed = true;
+      window.close();
+    })();
+  });
 }
 
 /** Picks up an image passed on the command line, e.g. "Open with Photoy". */
@@ -116,7 +159,7 @@ if (!app.requestSingleInstanceLock()) {
     const offer = recovery.offer();
 
     database = new Database(app.getPath('userData'));
-    registerIpcHandlers(engine, openSession, recovery, database);
+    ipc = registerIpcHandlers(engine, openSession, recovery, database);
 
     const worker = engine;
     autosaveTimer = setInterval(() => void autosave(worker), autosaveIntervalMs());
@@ -135,6 +178,7 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     mainWindow = createMainWindow(path.join(__dirname, 'preload.cjs'));
+    guardAgainstLosingWork(mainWindow);
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
@@ -144,6 +188,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0 && engine !== null) {
         mainWindow = createMainWindow(path.join(__dirname, 'preload.cjs'));
+        guardAgainstLosingWork(mainWindow);
       }
     });
   });

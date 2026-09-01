@@ -386,6 +386,21 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   openPath: async (path) => {
+    // The recent list holds both photographs and projects, and they are opened
+    // by different doors: a project carries an edit stack, a photograph does
+    // not, and reading one as the other loses everything or fails outright.
+    if (/\.myphoto$/i.test(path)) {
+      set({ busy: 'opening', error: null });
+      const project = await window.photoy.openProjectPath(path);
+      set({ busy: null });
+      if (!project.ok) {
+        set({ error: project.error });
+        return;
+      }
+      adoptProject(set, get, project.value);
+      return;
+    }
+
     set({ busy: 'opening', error: null });
     const response = await window.photoy.openImagePath(path);
     if (!response.ok) {

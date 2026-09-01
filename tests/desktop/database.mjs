@@ -123,6 +123,34 @@ export async function run() {
     second.close();
   });
 
+  await suite.check('a project takes the place of the photograph it came from', async () => {
+    // The whole point of the link: once the work exists, offering the untouched
+    // picture in the recent list is offering to start again.
+    const db = fresh();
+    db.rememberFile('/foto.jpg');
+    db.rememberProject('/foto.jpg', '/foto.myphoto');
+    db.forgetFile('/foto.jpg');
+    db.rememberFile('/foto.myphoto');
+
+    assert.deepEqual(db.recentFiles(), ['/foto.myphoto']);
+    assert.equal(db.projectFor('/foto.jpg'), '/foto.myphoto');
+    db.close();
+  });
+
+  await suite.check('a photograph with no project reports none', async () => {
+    const db = fresh();
+    assert.equal(db.projectFor('/nunca-editada.jpg'), null);
+    db.close();
+  });
+
+  await suite.check('saving again moves the link rather than adding one', async () => {
+    const db = fresh();
+    db.rememberProject('/foto.jpg', '/antigo.myphoto');
+    db.rememberProject('/foto.jpg', '/novo.myphoto');
+    assert.equal(db.projectFor('/foto.jpg'), '/novo.myphoto');
+    db.close();
+  });
+
   rmSync(directory, { recursive: true, force: true });
   return suite.report();
 }

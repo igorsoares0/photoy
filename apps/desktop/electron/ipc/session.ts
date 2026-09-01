@@ -14,18 +14,33 @@ export class Session {
   documentId: string | null = null;
   fileName = '';
   path: string | null = null;
+  /**
+   * The photograph this came from, when it was opened as one.
+   *
+   * Kept so a project can be tied back to its source: without it, saving makes
+   * a `.myphoto` that nothing points at, and opening the photograph again gives
+   * back the untouched picture with no sign the work exists.
+   */
+  sourcePath: string | null = null;
   dirty = false;
 
-  open(documentId: string, fileName: string, projectPath: string | null): void {
+  open(
+    documentId: string,
+    fileName: string,
+    projectPath: string | null,
+    sourcePath: string | null = null,
+  ): void {
     this.documentId = documentId;
     this.fileName = fileName;
     this.path = projectPath;
+    this.sourcePath = sourcePath;
     this.dirty = false;
   }
 
   close(): void {
     this.documentId = null;
     this.path = null;
+    this.sourcePath = null;
     this.dirty = false;
   }
 

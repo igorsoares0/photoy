@@ -16,6 +16,7 @@ import { run as runGeometry } from '../renderer/viewport.mjs';
 import { run as runPreviewSizing } from '../renderer/preview.mjs';
 import { run as runBrushGeometry } from '../renderer/brush.mjs';
 import { run as runDatabase } from '../desktop/database.mjs';
+import { run as runPaths } from '../desktop/paths.mjs';
 
 /**
  * Runs the engine suites against the real binary over the real protocol, plus
@@ -27,7 +28,7 @@ import { run as runDatabase } from '../desktop/database.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase, runPaths]) {
   failures += await suite();
 }
 

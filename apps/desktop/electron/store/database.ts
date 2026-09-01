@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS recent_files (
   opened_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS recent_files_opened ON recent_files (opened_at DESC);
+CREATE TABLE IF NOT EXISTS projects (
+  source_path  TEXT PRIMARY KEY,
+  project_path TEXT NOT NULL,
+  saved_at     INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -127,6 +132,31 @@ export class Database {
            (SELECT path FROM recent_files ORDER BY opened_at DESC LIMIT ?)`,
       )
       .run(RECENT_LIMIT);
+  }
+
+  /**
+   * Records that a photograph has a project saved from it.
+   *
+   * The point is the recent list: once the work exists, offering the untouched
+   * photograph instead of it is offering to throw the work away.
+   */
+  rememberProject(sourcePath: string, projectPath: string): void {
+    this.#db
+      .prepare(
+        `INSERT INTO projects (source_path, project_path, saved_at) VALUES (?, ?, ?)
+         ON CONFLICT(source_path) DO UPDATE SET
+           project_path = excluded.project_path,
+           saved_at = excluded.saved_at`,
+      )
+      .run(sourcePath, projectPath, Date.now());
+  }
+
+  /** The project saved from a photograph, if there is one. */
+  projectFor(sourcePath: string): string | null {
+    const row = this.#db
+      .prepare('SELECT project_path FROM projects WHERE source_path = ?')
+      .get(sourcePath) as { project_path: string } | undefined;
+    return row?.project_path ?? null;
   }
 
   recentFiles(): string[] {

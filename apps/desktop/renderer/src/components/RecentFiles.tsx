@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { useEditor } from '../store/editor';
 
-/** The file name, and enough of the folder above it to tell two apart. */
-function describe(fullPath: string): { name: string; folder: string } {
+/** The file name, enough of the folder above it to tell two apart, and its kind. */
+function describe(fullPath: string): { name: string; folder: string; project: boolean } {
   const parts = fullPath.split(/[\\/]/).filter((part) => part !== '');
   const name = parts.at(-1) ?? fullPath;
   const folder = parts.at(-2) ?? '';
-  return { name, folder };
+  return { name, folder, project: /\.myphoto$/i.test(name) };
 }
 
 /**
@@ -31,7 +31,7 @@ export function RecentFiles(): React.JSX.Element | null {
     <div className="flex w-full flex-col" style={{ gap: 'var(--gap-inline)' }}>
       <span className="eyebrow">Recentes</span>
       {recent.slice(0, 6).map((fullPath) => {
-        const { name, folder } = describe(fullPath);
+        const { name, folder, project } = describe(fullPath);
         return (
           <button
             key={fullPath}
@@ -46,6 +46,11 @@ export function RecentFiles(): React.JSX.Element | null {
               textAlign: 'left',
             }}
           >
+            {/* A project and a photograph open into different things, so the
+                list says which is which rather than leaving it to the suffix. */}
+            <span style={{ fontSize: 'var(--text-chip)', color: 'var(--fg-faint)', width: 12 }}>
+              {project ? '\u25C8' : '\u25A3'}
+            </span>
             <span
               className="flex-1 truncate"
               style={{ fontSize: 'var(--text-control)', color: 'var(--fg-primary)' }}
