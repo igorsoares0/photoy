@@ -262,6 +262,41 @@ em tons de cinza por máscara — em tons de cinza porque é o que uma máscara 
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
 
+### Melhorar foto
+
+A §21 pede uma função que analise a fotografia e **gere uma lista explícita de
+alterações**, e é categórica: *"a aplicação nunca deve aplicar alterações
+silenciosamente"*. Isso não é um detalhe de interface, é o desenho inteiro.
+
+A divisão é entre **medir e decidir**. Medir é aritmética e está no engine:
+histograma de luminância, média por canal, distância média do cinza, diferença
+média entre pixels vizinhos. Decidir o que uma medida vale — que uma foto está
+chapada, que uma dominante quer correção — é **gosto**, e gosto está em
+`lib/enhance.ts`, no renderer, onde dá para mudar sem recompilar, ler sem
+compilador e testar como função pura.
+
+A medição roda num quadro de no máximo 1024 px. Um histograma de um milhão de
+pixels diz o mesmo que um de vinte e quatro milhões sobre como uma foto está
+exposta, e alguém está esperando a resposta.
+
+Cada regra é um limiar e uma proporção, e cada proposta mostra **a medida que a
+gerou** — "20 % da foto no escuro", "usa 60 % da escala". Uma proposta errada
+fica discutível em vez de misteriosa. Nada é aplicado sem ser marcado, e o que é
+aplicado **soma ao que já está lá**: a proposta é uma melhoria da foto como ela
+está, não um veredito sobre ela.
+
+Duas regras nasceram erradas e o teste as pegou. Eu media as pontas do
+histograma por **fração fixa** — "mais de 12 % abaixo do nível 40 quer sombras
+levantadas" —, e isso propõe consertar uma fotografia distribuída uniformemente
+por toda a escala, que é uma fotografia boa. O teste certo é **densidade**: a
+ponta escura segura mais por nível do que o meio? Uma imagem uniforme mede
+exatamente 1,0 e não quer nada; um quinto de imagem empilhado perto do branco
+mede 1,45 e quer. O limiar ficou entre os dois, e está escrito por quê.
+
+**O que não está aqui:** "reduzir ruído", que o exemplo da spec cita. Não existe
+denoise ainda (§22 é outro milestone), e propor o que não se sabe fazer seria
+mentir na lista.
+
 ### Não perder trabalho
 
 Um relato de uso encontrou três buracos que os testes não encontrariam, porque

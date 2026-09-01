@@ -518,6 +518,45 @@ export async function run() {
     await engine.call('image.close', { documentId });
   });
 
+  await suite.check('the analysis measures the document as it looks now', async () => {
+    // It measures the picture on screen, not the file: running it after an edit
+    // has to see the edit, or the second proposal would repeat the first.
+    const documentId = await openFile('flat.png');
+    const plain = await engine.call('image.analyse', { documentId });
+    assert.equal(plain.result.histogram.length, 256);
+    assert.ok(plain.result.pixels > 0);
+    const middle = plain.result.histogram.findIndex((count) => count > 0);
+
+    await adjust(documentId, { exposure: 1.5 });
+    const brighter = await engine.call('image.analyse', { documentId });
+    const moved = brighter.result.histogram.findIndex((count) => count > 0);
+    assert.ok(moved > middle, `the histogram did not move: ${middle} then ${moved}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('the analysis reports a colour cast it can see', async () => {
+    const documentId = await openFile('patches.png');
+    const neutral = await engine.call('image.analyse', { documentId });
+    const spread = (m) => Math.max(...m) - Math.min(...m);
+    assert.ok(spread(neutral.result.channelMean) < 0.05, 'the fixture is not neutral');
+
+    await adjust(documentId, { temperature: 80 });
+    const warm = await engine.call('image.analyse', { documentId });
+    assert.ok(warm.result.channelMean[0] > warm.result.channelMean[2], 'warming did not show');
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a flat frame measures no detail and a busy one does', async () => {
+    const flat = await openFile('flat.png');
+    const busy = await openFile('patches.png');
+    const flatDetail = (await engine.call('image.analyse', { documentId: flat })).result.detail;
+    const busyDetail = (await engine.call('image.analyse', { documentId: busy })).result.detail;
+    assert.ok(flatDetail < 0.001, `a flat frame measured ${flatDetail}`);
+    assert.ok(busyDetail > flatDetail, 'bands of colour measured no more detail than a flat frame');
+    await engine.call('image.close', { documentId: flat });
+    await engine.call('image.close', { documentId: busy });
+  });
+
   engine.close();
   rmSync(workDir, { recursive: true, force: true });
   return suite.report();

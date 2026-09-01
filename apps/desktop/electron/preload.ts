@@ -14,6 +14,7 @@ import {
   type StoredMask,
 } from '@photoy/ipc';
 import type {
+  ImageAnalysis,
   Preset,
   DocumentInfo,
   EditHistory,
@@ -64,6 +65,8 @@ const api: PhotoyApi = {
   deletePreset: (id: string) =>
     ipcRenderer.invoke(Channels.presetDelete, id) as Promise<ApiResult<Preset[]>>,
   listRecent: () => ipcRenderer.invoke(Channels.recentList) as Promise<ApiResult<string[]>>,
+  analyse: (documentId: string) =>
+    ipcRenderer.invoke(Channels.imageAnalyse, documentId) as Promise<ApiResult<ImageAnalysis>>,
   chooseBackground: (documentId: string) =>
     ipcRenderer.invoke(Channels.backgroundChoose, documentId) as Promise<
       ApiResult<BackdropResult | null>

@@ -10,6 +10,7 @@
 #include "core/paths.h"
 #include "decoder/format_sniffer.h"
 #include "core/json.h"
+#include "edit/analysis.h"
 #include "edit/render.h"
 #include "image/resample.h"
 #include "edit/serialize.h"
@@ -260,7 +261,7 @@ void Engine::Dispatch(const nlohmann::json& header,
   }
 
   const bool known = method == "ai.inpaint" || method == "background.load" ||
-                     method == "image.open" ||
+                     method == "image.analyse" || method == "image.open" ||
                      method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
                      method == "project.save" || method == "ai.segment";
@@ -289,6 +290,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                        response = InpaintJob(id, params, token);
                      } else if (method == "background.load") {
                        response = LoadBackdrop(id, params, token);
+                     } else if (method == "image.analyse") {
+                       response = AnalyseJob(id, params, token);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -633,6 +636,38 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
                               {"raster", raster},
                               {"width", plan.geometry.NaturalWidth()},
                               {"height", plan.geometry.NaturalHeight()}});
+}
+
+protocol::Frame Engine::AnalyseJob(std::int64_t id, const json& params,
+                                   const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::vector<Operation> operations = document->ActiveOperations();
+
+  // Measured small. A histogram of a million pixels says the same thing as a
+  // histogram of twenty-four million about how a photograph is exposed, and
+  // this runs while somebody is waiting for an answer.
+  constexpr int kAnalysisSide = 1024;
+  const PreviewPlan plan = PlanPreview(operations, document->source.width(),
+                                       document->source.height(), kAnalysisSide, kAnalysisSide);
+  const Image16 base = RenderGeometry(document->source, plan, token);
+  const std::vector<Layer> layers = FoldLayers(operations);
+  const Image8 encoded =
+      ComposeToOutput8(base, layers, FitMasks(*document, plan, layers),
+                       FitPatches(*document, plan, layers), color::OutputSpace::kSrgb, token,
+                       true, plan.scale);
+
+  const Analysis analysis = Analyse(encoded);
+  json histogram = json::array();
+  for (const std::uint32_t bin : analysis.histogram) histogram.push_back(bin);
+
+  return MakeSuccess(id, json{{"documentId", document->id},
+                              {"pixels", analysis.pixels},
+                              {"histogram", std::move(histogram)},
+                              {"channelMean", json::array({analysis.channel_mean[0],
+                                                           analysis.channel_mean[1],
+                                                           analysis.channel_mean[2]})},
+                              {"chromaMean", analysis.chroma_mean},
+                              {"detail", analysis.detail}});
 }
 
 protocol::Frame Engine::LoadBackdrop(std::int64_t id, const json& params,

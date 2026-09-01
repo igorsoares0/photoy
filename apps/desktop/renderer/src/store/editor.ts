@@ -18,6 +18,12 @@ import type {
 } from '@photoy/types';
 import { NEUTRAL_ADJUSTMENTS, NO_MASK, SEGMENTED_LEVELS } from '@photoy/types';
 import type { Preset, PresetCategory } from '@photoy/types';
+import {
+  applySuggestions,
+  proposeEnhancements,
+  type Suggestion,
+  type SuggestionId,
+} from '../lib/enhance';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
 
@@ -35,7 +41,14 @@ export interface PreviewState {
   scale: number;
 }
 
-export type Busy = 'opening' | 'rendering' | 'exporting' | 'segmenting' | 'filling' | null;
+export type Busy =
+  | 'opening'
+  | 'rendering'
+  | 'exporting'
+  | 'segmenting'
+  | 'filling'
+  | 'analysing'
+  | null;
 
 /** What the export dialog collects before a destination is chosen. */
 export interface ExportOptions {
@@ -197,6 +210,18 @@ interface EditorState {
   setAdjustment(key: AdjustmentKey, value: number, continuing: boolean): Promise<void>;
 
   /** The user's own presets. The built-in ones are a constant, not state. */
+  /**
+   * The proposal from the last analysis, or null when there is none.
+   *
+   * Kept unapplied on purpose: the spec is explicit that the application must
+   * never change a photograph silently, so this is a list to be reviewed and
+   * nothing happens until the user says so.
+   */
+  suggestions: Suggestion[] | null;
+  analyse(): Promise<void>;
+  dismissSuggestions(): void;
+  applyEnhancements(chosen: ReadonlySet<SuggestionId>): Promise<void>;
+
   presets: Preset[];
   loadPresets(): Promise<void>;
   applyPreset(preset: Preset): Promise<void>;
@@ -353,6 +378,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   fitOnRequest: false,
   interacting: false,
   brush: null,
+  suggestions: null,
   presets: [],
   recent: [],
   comparing: false,
@@ -907,6 +933,41 @@ export const useEditor = create<EditorState>((set, get) => ({
       set,
       get,
       await window.photoy.applyEdit(document.id, { kind: 'crop', rect: cropRect }),
+    );
+  },
+
+  analyse: async () => {
+    const document = get().document;
+    if (document === null) return;
+
+    set({ busy: 'analysing', error: null, suggestions: null });
+    const measured = await window.photoy.analyse(document.id);
+    if (!measured.ok) {
+      set({ busy: null, error: measured.error });
+      return;
+    }
+    set({ busy: null, suggestions: proposeEnhancements(measured.value) });
+  },
+
+  dismissSuggestions: () => set({ suggestions: null }),
+
+  applyEnhancements: async (chosen) => {
+    const document = get().document;
+    const suggestions = get().suggestions;
+    if (document === null || suggestions === null || chosen.size === 0) return;
+
+    const next = applySuggestions(currentAdjustments(get()), suggestions, chosen);
+    const layerId = get().selectedLayerId ?? undefined;
+    set({ pendingAdjustments: next, suggestions: null });
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, {
+        kind: 'adjust',
+        adjustments: next,
+        name: 'Melhorar foto',
+        ...(layerId === undefined ? {} : { layerId }),
+      }),
     );
   },
 

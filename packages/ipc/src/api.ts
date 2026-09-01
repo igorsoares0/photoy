@@ -1,4 +1,5 @@
 import type {
+  ImageAnalysis,
   Preset,
   DocumentInfo,
   EditHistory,
@@ -156,6 +157,14 @@ export interface PhotoyApi {
   listPresets(): Promise<ApiResult<Preset[]>>;
   savePreset(preset: Omit<Preset, 'builtIn'>): Promise<ApiResult<Preset[]>>;
   deletePreset(id: string): Promise<ApiResult<Preset[]>>;
+
+  /**
+   * Measures the document as it currently looks.
+   *
+   * Only measures. What a measurement is worth is decided in the renderer,
+   * where it can be argued with.
+   */
+  analyse(documentId: string): Promise<ApiResult<ImageAnalysis>>;
 
   /** Opens a project by path, for the recent list. */
   openProjectPath(path: string): Promise<ApiResult<OpenedProject>>;

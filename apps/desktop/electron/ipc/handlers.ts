@@ -16,6 +16,7 @@ import type {
   EditHistory,
   ExportResult,
   Operation,
+  ImageAnalysis,
   Preset,
   PreviewInfo,
   PreviewRequest,
@@ -348,6 +349,11 @@ export function registerIpcHandlers(
       else database.forgetFile(candidate);
     }
     return alive;
+  });
+
+  handle(Channels.imageAnalyse, async (documentId: string) => {
+    const { result } = await engine.call<ImageAnalysis>('image.analyse', { documentId });
+    return result;
   });
 
   handle(Channels.backgroundChoose, async (documentId: string) => {

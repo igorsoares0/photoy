@@ -11,6 +11,7 @@ import { MattePanel } from './MattePanel';
 import { BrushPanel } from './BrushPanel';
 import { PatchPanel } from './PatchPanel';
 import { PresetsPanel } from './PresetsPanel';
+import { EnhancePanel } from './EnhancePanel';
 import { ResizePanel } from './ResizePanel';
 import { PanelSection } from './PanelSection';
 import { Slider } from './Slider';
@@ -220,6 +221,7 @@ export function AdjustmentsPanel(): React.JSX.Element {
                   </PanelSection>
                 ) : null}
                 {adjustmentLayer !== null ? <MaskPanel layer={adjustmentLayer} /> : null}
+                <EnhancePanel />
                 <PresetsPanel />
                 <Group label="Luz" controls={LIGHT} />
                 <Group label="Cor" controls={COLOUR} />
