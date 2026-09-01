@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ImageFormat, OutputSpace } from '@photoy/types';
+import type { ExportFormat, OutputSpace } from '@photoy/types';
 import { useEditor } from '../store/editor';
 import { formatDimensions } from '../lib/format';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
 import { Slider } from './Slider';
 
-const FORMATS: ReadonlyArray<{ value: ImageFormat; label: string }> = [
+const FORMATS: ReadonlyArray<{ value: ExportFormat; label: string }> = [
   { value: 'jpeg', label: 'JPG' },
   { value: 'png', label: 'PNG' },
   { value: 'tiff', label: 'TIFF' },
@@ -20,10 +20,10 @@ const SPACES: ReadonlyArray<{ value: OutputSpace; label: string }> = [
 ];
 
 /** Only these two encoders read the quality value; the others are lossless. */
-const LOSSY: ReadonlySet<ImageFormat> = new Set<ImageFormat>(['jpeg', 'webp']);
+const LOSSY: ReadonlySet<ExportFormat> = new Set<ExportFormat>(['jpeg', 'webp']);
 
 /** Only these two containers can carry more than 8 bits per channel. */
-const DEEP: ReadonlySet<ImageFormat> = new Set<ImageFormat>(['png', 'tiff']);
+const DEEP: ReadonlySet<ExportFormat> = new Set<ExportFormat>(['png', 'tiff']);
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
@@ -64,7 +64,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): React.JSX.El
   const busy = useEditor((state) => state.busy);
   const exportImage = useEditor((state) => state.exportImage);
 
-  const [format, setFormat] = useState<ImageFormat>('jpeg');
+  const [format, setFormat] = useState<ExportFormat>('jpeg');
   const [quality, setQuality] = useState(92);
   const [colorSpace, setColorSpace] = useState<OutputSpace>('srgb');
   const [sixteenBit, setSixteenBit] = useState(false);
@@ -140,7 +140,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): React.JSX.El
 
         <div className="flex flex-col" style={{ gap: 'var(--gap-control)' }}>
           <Field label="Formato">
-            <SegmentedControl<ImageFormat> options={FORMATS} value={format} onChange={setFormat} />
+            <SegmentedControl<ExportFormat> options={FORMATS} value={format} onChange={setFormat} />
           </Field>
 
           {LOSSY.has(format) ? (

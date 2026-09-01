@@ -48,6 +48,8 @@ struct Document {
    * small next to the working buffer, which is already eight bytes a pixel.
    */
   std::vector<std::uint8_t> source_bytes;
+  /// What the raw file said about itself. Default for everything else.
+  RawInfo raw;
   /// True when the file carried a usable ICC profile rather than being assumed sRGB.
   bool tagged = false;
   /// Description of the source profile, for the UI. Empty when untagged.
@@ -62,6 +64,24 @@ struct Document {
   std::vector<Operation> ActiveOperations() const;
 
   /**
+   * The pixels a render should start from.
+   *
+   * `source` above is the file as the camera balanced it and never changes.
+   * When the stack asks for a different white balance the file is decoded
+   * again, because white balance acts on the sensor's own numbers before the
+   * mosaic is interpolated - there is no way to reach it from finished pixels.
+   *
+   * The result is handed back by shared pointer and never mutated in place, so
+   * a render already reading one keeps it alive while a later request replaces
+   * it. That is the same promise `source` makes, extended to cover a second
+   * buffer rather than broken to allow one.
+   *
+   * Same dimensions as `source` in every case, so everything that asks the
+   * document how large it is can go on asking `source`.
+   */
+  std::shared_ptr<const Image16> DevelopedSource(const RawSettings& settings) const;
+
+  /**
    * The last geometry result, kept so a moving slider does not redo it.
    *
    * Adjustments do not change shape, so while one is being dragged this stays
@@ -69,8 +89,13 @@ struct Document {
    * shared pointer: a render that is already reading it must not have it freed
    * underneath by the next request.
    */
-  std::shared_ptr<const Image16> CachedBase(const PreviewPlan& plan) const;
-  void CacheBase(const PreviewPlan& plan, std::shared_ptr<const Image16> base);
+  /// Keyed on the raw settings as well as the plan: a white balance change
+  /// leaves the geometry alone but replaces every pixel underneath it, so the
+  /// plan on its own would happily hand back a base built from the old decode.
+  std::shared_ptr<const Image16> CachedBase(const PreviewPlan& plan,
+                                            const RawSettings& settings) const;
+  void CacheBase(const PreviewPlan& plan, const RawSettings& settings,
+                 std::shared_ptr<const Image16> base);
 
   /**
    * Generated masks, in document coordinates at the size they were made for.
@@ -111,8 +136,15 @@ struct Document {
                         std::shared_ptr<const FittedPatch> fitted);
 
  private:
+  /// Guards the developed buffer. Held across the decode itself, so a second
+  /// render asking for the same settings waits rather than decoding again.
+  mutable std::mutex developed_mutex_;
+  mutable RawSettings developed_settings_;
+  mutable std::shared_ptr<const Image16> developed_;
+
   mutable std::mutex base_mutex_;
   PreviewPlan base_plan_;
+  RawSettings base_settings_;
   std::shared_ptr<const Image16> base_;
 
   mutable std::mutex masks_mutex_;

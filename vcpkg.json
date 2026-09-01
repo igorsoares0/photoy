@@ -11,6 +11,12 @@
       "default-features": false
     },
     "libjpeg-turbo",
+    {
+      "name": "libraw",
+      "features": [
+        "openmp"
+      ]
+    },
     "libpng",
     {
       "name": "tiff",

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "edit/adjustments.h"
+#include "decoder/decoder.h"
 #include "edit/layer.h"
 #include "image/orientation.h"
 #include "image/rect.h"
@@ -28,6 +29,7 @@ enum class OperationKind {
   kSetLayerFill,
   kSetLayerDecontaminate,
   kSetLayerPatch,
+  kDevelopRaw,
 };
 
 /**
@@ -76,6 +78,10 @@ struct Operation {
   int target_height = 0;
   /// kSetLayerPatch: which stored patch the layer draws.
   std::uint64_t patch = 0;
+  /// kDevelopRaw: how the file should be decoded, rather than what to do with
+  /// the pixels afterwards. The whole state, like adjustments, so the entry in
+  /// effect is simply the last one.
+  RawSettings raw;
 
   /// Stable identifier, assigned on apply, so the host can address history entries.
   std::uint64_t id = 0;
@@ -126,6 +132,16 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
 
 /// The adjustment state in effect on the topmost adjustment layer.
 Adjustments FoldAdjustments(const std::vector<Operation>& operations) noexcept;
+
+/**
+ * The raw development settings in effect.
+ *
+ * Folded separately from everything else because it decides what the decoder
+ * produces, not what happens to what it produced: a change here means the
+ * source pixels themselves are different, and the geometry and layer folds both
+ * run on top of whatever comes out.
+ */
+RawSettings FoldRawSettings(const std::vector<Operation>& operations) noexcept;
 
 /**
  * Replays the operations into the layer stack they describe, bottom first.

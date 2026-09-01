@@ -1,8 +1,63 @@
 import path from 'node:path';
 import { statSync } from 'node:fs';
 
+/**
+ * Extensions of the raw formats the engine decodes through LibRaw.
+ *
+ * A hint, not a decision: the engine sniffs the file itself, and most of these
+ * are TIFF containers that a magic number cannot tell from an ordinary TIFF.
+ * The list exists so the open dialog shows a photographer's files and the path
+ * guard does not reject them before the engine ever sees the bytes.
+ */
+const RAW_EXTENSIONS = [
+  '.3fr', '.arw', '.cr2', '.cr3', '.crw', '.dcr', '.dng', '.erf', '.iiq', '.kdc',
+  '.mef', '.mos', '.mrw', '.nef', '.nrw', '.orf', '.pef', '.raf', '.raw', '.rw2',
+  '.rwl', '.sr2', '.srf', '.srw', '.x3f',
+];
+
 /** Extensions the engine can decode. Content is still sniffed on open. */
-const READABLE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.jpe', '.png', '.tif', '.tiff', '.webp']);
+const READABLE_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.jpe', '.png', '.tif', '.tiff', '.webp',
+  ...RAW_EXTENSIONS,
+]);
+
+/**
+ * Whether a path looks decodable, judged by extension alone.
+ *
+ * For the places that hold a string and no file yet - a command line argument,
+ * a shell file association. Anything that has the bytes should sniff them.
+ */
+export function hasReadableExtension(candidate: string): boolean {
+  return READABLE_EXTENSIONS.has(path.extname(candidate).toLowerCase());
+}
+
+/**
+ * Open-dialog filters, derived from the sets above so the dialog and the guard
+ * cannot disagree about what opens.
+ */
+export const OPEN_FILTERS = [
+  {
+    name: 'Imagens',
+    extensions: [...READABLE_EXTENSIONS].map((extension) => extension.slice(1)),
+  },
+  { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+  { name: 'PNG', extensions: ['png'] },
+  { name: 'TIFF', extensions: ['tif', 'tiff'] },
+  { name: 'WebP', extensions: ['webp'] },
+  { name: 'RAW', extensions: RAW_EXTENSIONS.map((extension) => extension.slice(1)) },
+];
+
+/**
+ * Save-dialog filters. A separate list rather than a slice of the one above,
+ * because raw is decode-only: offering it as an export target would promise
+ * something no encoder can deliver.
+ */
+export const EXPORT_FILTERS = [
+  { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
+  { name: 'PNG', extensions: ['png'] },
+  { name: 'TIFF', extensions: ['tif', 'tiff'] },
+  { name: 'WebP', extensions: ['webp'] },
+];
 
 /**
  * The project container.

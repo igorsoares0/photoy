@@ -1,5 +1,7 @@
 #include "edit/serialize.h"
 
+#include "color/temperature.h"
+
 #include <algorithm>
 
 #include "core/json.h"
@@ -8,6 +10,7 @@ namespace photoy {
 namespace {
 
 using nlohmann::json;
+using json_util::OptionalDouble;
 using json_util::OptionalFloat;
 using json_util::OptionalInt;
 
@@ -158,6 +161,11 @@ json ToJson(const Operation& operation) {
       entry["width"] = operation.target_width;
       entry["height"] = operation.target_height;
       break;
+    case OperationKind::kDevelopRaw:
+      entry["custom"] = operation.raw.custom_balance;
+      entry["temperature"] = operation.raw.balance.kelvin;
+      entry["tint"] = operation.raw.balance.tint;
+      break;
     case OperationKind::kSetLayerDecontaminate:
       entry["layerId"] = operation.target_layer;
       entry["decontaminate"] = operation.amount;
@@ -222,6 +230,18 @@ Operation FromJson(const json& value) {
     if (operation.layer_kind == LayerKind::kBackground) {
       operation.layer_kind = LayerKind::kAdjustment;
     }
+    return operation;
+  }
+  if (kind == "developRaw") {
+    operation.kind = OperationKind::kDevelopRaw;
+    // Absent means the camera's own balance, which is how the control gets
+    // back to where the file started without carrying a magic temperature.
+    operation.raw.custom_balance = value.value("custom", true);
+    operation.raw.balance.kelvin =
+        std::clamp(OptionalDouble(value, "temperature", 6500.0), color::kMinKelvin,
+                   color::kMaxKelvin);
+    operation.raw.balance.tint =
+        std::clamp(OptionalDouble(value, "tint", 0.0), -color::kMaxTint, color::kMaxTint);
     return operation;
   }
   if (kind == "setLayerPatch") {

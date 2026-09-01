@@ -14,6 +14,12 @@ interface SliderProps {
   idle?: boolean;
   /** `continuing` is false on the first change of a gesture, true after. */
   onChange(value: number, continuing: boolean): void;
+  /**
+   * Called once when a gesture ends, for controls too expensive to apply on
+   * every step. A raw white balance is the case: it costs a decode, so it
+   * follows the knob locally and reaches the engine when the finger lifts.
+   */
+  onCommit?(): void;
   /** Double-click returns the control to neutral. */
   onReset?(): void;
 }
@@ -38,10 +44,12 @@ export function Slider({
   origin = 0,
   idle = false,
   onChange,
+  onCommit,
   onReset,
 }: SliderProps): React.JSX.Element {
   const id = useId();
   const dragging = useRef(false);
+  const moved = useRef(false);
 
   const ratio = (input: number) => (input - min) / (max - min);
   const position = ratio(value);
@@ -53,9 +61,20 @@ export function Slider({
     (next: number) => {
       onChange(next, dragging.current);
       dragging.current = true;
+      moved.current = true;
     },
     [onChange],
   );
+
+  // Only after something actually changed: a click on the track that lands on
+  // the current value should not spend a decode saying so.
+  const finish = useCallback(() => {
+    dragging.current = false;
+    if (moved.current) {
+      moved.current = false;
+      onCommit?.();
+    }
+  }, [onCommit]);
 
   return (
     <div className="flex flex-col" style={{ gap: 'var(--gap-inline)' }}>
@@ -117,15 +136,10 @@ export function Slider({
           step={step}
           value={value}
           onChange={(event) => handleChange(Number(event.target.value))}
-          onPointerUp={() => {
-            dragging.current = false;
-          }}
-          onPointerCancel={() => {
-            dragging.current = false;
-          }}
-          onBlur={() => {
-            dragging.current = false;
-          }}
+          onPointerUp={finish}
+          onPointerCancel={finish}
+          onBlur={finish}
+          onKeyUp={finish}
           className="photoy-range absolute inset-x-0 h-3.5 w-full"
         />
       </div>

@@ -28,18 +28,13 @@ import {
   resolveProjectPath,
   resolveReadablePath,
   resolveWritablePath,
+  OPEN_FILTERS,
+  EXPORT_FILTERS,
 } from './paths.js';
 import type { Recovery, Session } from './session.js';
 
 const PROJECT_FILTERS = [{ name: 'Projeto Photoy', extensions: ['myphoto'] }];
 
-const IMAGE_FILTERS = [
-  { name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'webp'] },
-  { name: 'JPEG', extensions: ['jpg', 'jpeg'] },
-  { name: 'PNG', extensions: ['png'] },
-  { name: 'TIFF', extensions: ['tif', 'tiff'] },
-  { name: 'WebP', extensions: ['webp'] },
-];
 
 /**
  * Wraps a handler so every channel answers with a discriminated result.
@@ -131,9 +126,9 @@ export function registerIpcHandlers(
       ? await dialog.showOpenDialog(window, {
           title: 'Abrir imagem',
           properties: ['openFile'],
-          filters: IMAGE_FILTERS,
+          filters: OPEN_FILTERS,
         })
-      : await dialog.showOpenDialog({ properties: ['openFile'], filters: IMAGE_FILTERS });
+      : await dialog.showOpenDialog({ properties: ['openFile'], filters: OPEN_FILTERS });
 
     if (picked.canceled || picked.filePaths.length === 0) return null;
     const filePath = resolveReadablePath(picked.filePaths[0]);
@@ -188,7 +183,7 @@ export function registerIpcHandlers(
     const options = {
       title: 'Exportar imagem',
       defaultPath: suggestedName,
-      filters: IMAGE_FILTERS.slice(1),
+      filters: EXPORT_FILTERS,
     };
     const picked = window
       ? await dialog.showSaveDialog(window, options)
@@ -361,7 +356,7 @@ export function registerIpcHandlers(
     const options = {
       title: 'Escolher fundo',
       properties: ['openFile' as const],
-      filters: IMAGE_FILTERS,
+      filters: OPEN_FILTERS,
     };
     const picked = window
       ? await dialog.showOpenDialog(window, options)

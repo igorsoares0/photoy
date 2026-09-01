@@ -12,6 +12,7 @@ import { run as runBackground } from './background.mjs';
 import { run as runResize } from './resize.mjs';
 import { run as runBrush } from './brush.mjs';
 import { run as runInpaint } from './inpaint.mjs';
+import { run as runRaw } from './raw.mjs';
 import { run as runGeometry } from '../renderer/viewport.mjs';
 import { run as runPreviewSizing } from '../renderer/preview.mjs';
 import { run as runBrushGeometry } from '../renderer/brush.mjs';
@@ -29,7 +30,7 @@ import { run as runEnhance } from '../renderer/enhance.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase, runPaths, runEnhance]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runRaw, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase, runPaths, runEnhance]) {
   failures += await suite();
 }
 

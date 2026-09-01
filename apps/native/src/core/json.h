@@ -35,4 +35,11 @@ inline float OptionalFloat(const nlohmann::json& object, const char* key, float 
   return object.at(key).get<float>();
 }
 
+/// For the values that are kelvin and would lose meaningful precision as a
+/// float once a project has been saved and reopened a few times.
+inline double OptionalDouble(const nlohmann::json& object, const char* key, double fallback) {
+  if (!object.is_object() || !object.contains(key) || !object.at(key).is_number()) return fallback;
+  return object.at(key).get<double>();
+}
+
 }  // namespace photoy::json_util

@@ -22,7 +22,8 @@ export type OperationKind =
   | 'setLayerMask'
   | 'setLayerFill'
   | 'setLayerDecontaminate'
-  | 'setLayerPatch';
+  | 'setLayerPatch'
+  | 'developRaw';
 
 export type MaskKind = 'none' | 'linear' | 'radial' | 'raster';
 
@@ -279,6 +280,24 @@ export interface ResizeOperation {
   height: number;
 }
 
+/**
+ * How a raw file is developed, rather than what happens to the pixels after.
+ *
+ * The one operation that reaches behind the decode. White balance acts on the
+ * sensor's own readings before the colour mosaic is interpolated, so changing
+ * it means decoding the file again - there is no path back to those readings
+ * from finished pixels. Everything else in this union is cheap by comparison.
+ */
+export interface DevelopRawOperation {
+  kind: 'developRaw';
+  /** False restores the camera's own white balance, whatever it was. */
+  custom: boolean;
+  /** Kelvin. Higher is a warmer photograph, as every raw converter has it. */
+  temperature?: number;
+  /** Negative is green, positive is magenta, describing the photograph. */
+  tint?: number;
+}
+
 export interface SetLayerPatchOperation {
   kind: 'setLayerPatch';
   layerId: number;
@@ -328,6 +347,7 @@ export type Operation =
   | SetLayerDecontaminateOperation
   | ResizeOperation
   | SetLayerPatchOperation
+  | DevelopRawOperation
   | LayerOperation;
 
 /** An operation as it comes back from the engine, with its assigned id. */
@@ -345,6 +365,14 @@ export interface EditHistory {
   layers: Layer[];
   /** The adjustment state of the topmost adjustment layer. */
   adjustments: Adjustments;
+  /**
+   * The white balance in effect on a raw file.
+   *
+   * `custom` false means the camera's own, and the values reported are that
+   * one, so a control reading from here sits where the photograph is rather
+   * than at an invented default.
+   */
+  raw: { custom: boolean; temperature: number; tint: number };
   /** Size the stack currently produces, which is what the viewport fits to. */
   width: number;
   height: number;

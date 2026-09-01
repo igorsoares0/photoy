@@ -1,11 +1,11 @@
 import type { DocumentId } from './document.js';
-import type { ImageFormat, OutputSpace } from './image.js';
+import type { ExportFormat, OutputSpace } from './image.js';
 
 export interface ExportRequest {
   documentId: DocumentId;
   /** Absolute destination path. The engine writes atomically via a temp file. */
   path: string;
-  format: ImageFormat;
+  format: ExportFormat;
   /**
    * Encoder quality, 1-100. Applies to jpeg and lossy webp; ignored by png and
    * tiff, which are always lossless here.
@@ -24,7 +24,7 @@ export interface ExportRequest {
 
 export interface ExportResult {
   path: string;
-  format: ImageFormat;
+  format: ExportFormat;
   /** Space the file was actually written in. */
   colorSpace: OutputSpace;
   /** Bits per channel actually written, which the format may have capped. */

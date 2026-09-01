@@ -57,6 +57,7 @@ std::string Operation::KindName() const {
     case OperationKind::kSetLayerFill: return "setLayerFill";
     case OperationKind::kSetLayerDecontaminate: return "setLayerDecontaminate";
     case OperationKind::kSetLayerPatch: return "setLayerPatch";
+    case OperationKind::kDevelopRaw: return "developRaw";
   }
   return "unknown";
 }
@@ -111,6 +112,10 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
       case OperationKind::kSetLayerDecontaminate:
       case OperationKind::kSetLayerPatch:
         break;  // colour and compositing only; the shape is untouched
+      case OperationKind::kDevelopRaw:
+        // Changes what the decoder produces, not its shape: a different white
+        // balance is the same pixels in different colours.
+        break;
       case OperationKind::kResize: {
         geometry.target_width = std::max(1, operation.target_width);
         geometry.target_height = std::max(1, operation.target_height);
@@ -274,6 +279,14 @@ std::vector<Layer> FoldLayers(const std::vector<Operation>& operations) {
     }
   }
   return layers;
+}
+
+RawSettings FoldRawSettings(const std::vector<Operation>& operations) noexcept {
+  RawSettings settings;
+  for (const Operation& operation : operations) {
+    if (operation.kind == OperationKind::kDevelopRaw) settings = operation.raw;
+  }
+  return settings;
 }
 
 Adjustments FoldAdjustments(const std::vector<Operation>& operations) noexcept {

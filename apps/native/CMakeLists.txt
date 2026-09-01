@@ -5,6 +5,12 @@ find_package(TIFF REQUIRED)
 find_package(WebP CONFIG REQUIRED)
 find_package(lcms CONFIG REQUIRED)
 find_package(libzip CONFIG REQUIRED)
+# LibRaw is dual licensed, LGPL-2.1-only or CDDL-1.0, and the choice is ours.
+# We take CDDL-1.0: its copyleft is per file, so it reaches modifications to
+# LibRaw's own sources and nothing else, which is what makes it compatible with
+# linking the library statically into a proprietary binary. The LGPL branch is
+# not, under static linking. Nothing here modifies LibRaw.
+find_package(libraw CONFIG REQUIRED)
 
 # The official prebuilt ONNX Runtime (MIT), fetched by scripts/setup-windows.bat.
 # A source build through vcpkg takes the better part of an hour for no benefit.
@@ -21,6 +27,7 @@ add_executable(photoy-engine
 
   src/color/profile.cpp
   src/color/matrix.cpp
+  src/color/temperature.cpp
   src/color/output.cpp
   src/color/pipeline.cpp
 
@@ -61,6 +68,7 @@ add_executable(photoy-engine
   src/decoder/png_decoder.cpp
   src/decoder/tiff_decoder.cpp
   src/decoder/webp_decoder.cpp
+  src/decoder/raw_decoder.cpp
   src/decoder/decode.cpp
 
   src/export/jpeg_encoder.cpp
@@ -85,6 +93,15 @@ target_link_libraries(photoy-engine PRIVATE
   WebP::libwebpmux
   lcms::lcms
   libzip::zip
+  # The reentrant build: image.open runs on the job queue, so two decodes
+  # can be in flight at once.
+  #
+  # Built with OpenMP, which is where a raw open got most of its speed: the
+  # demosaic of a 24 MP frame went from 2.9 s to 0.9 s. It adds VCOMP140.DLL to
+  # the engine's imports, from the same Visual C++ redistributable that already
+  # supplies MSVCP140 and VCRUNTIME140, so packaging gains a file but no new
+  # dependency.
+  libraw::raw_r
   "${PHOTOY_ORT}/lib/onnxruntime.lib"
 )
 

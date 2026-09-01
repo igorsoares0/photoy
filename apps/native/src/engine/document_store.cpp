@@ -14,15 +14,18 @@ std::vector<Operation> Document::ActiveOperations() const {
   return stack.Active();
 }
 
-std::shared_ptr<const Image16> Document::CachedBase(const PreviewPlan& plan) const {
+std::shared_ptr<const Image16> Document::CachedBase(const PreviewPlan& plan,
+                                                   const RawSettings& settings) const {
   const std::lock_guard<std::mutex> lock(base_mutex_);
-  if (base_ == nullptr || !plan.Matches(base_plan_)) return nullptr;
+  if (base_ == nullptr || !plan.Matches(base_plan_) || base_settings_ != settings) return nullptr;
   return base_;
 }
 
-void Document::CacheBase(const PreviewPlan& plan, std::shared_ptr<const Image16> base) {
+void Document::CacheBase(const PreviewPlan& plan, const RawSettings& settings,
+                         std::shared_ptr<const Image16> base) {
   const std::lock_guard<std::mutex> lock(base_mutex_);
   base_plan_ = plan;
+  base_settings_ = settings;
   base_ = std::move(base);
 }
 
@@ -123,6 +126,32 @@ std::shared_ptr<Document> DocumentStore::Open(const std::string& utf8_path) {
   return OpenFromMemory(paths::ReadAll(utf8_path), paths::FileName(utf8_path), utf8_path);
 }
 
+std::shared_ptr<const Image16> Document::DevelopedSource(const RawSettings& settings) const {
+  // An aliasing shared pointer with no owner: it points at `source`, which the
+  // document owns for its whole life, and costs nothing to make. The caller
+  // cannot tell this one from a decoded buffer, which is what keeps the render
+  // path free of a special case for the ordinary file.
+  const auto as_shot = [this] {
+    return std::shared_ptr<const Image16>(std::shared_ptr<const void>(), &source);
+  };
+
+  if (!settings.custom_balance || format != ImageFormat::kRaw || !raw.adjustable) {
+    return as_shot();
+  }
+
+  const std::lock_guard<std::mutex> lock(developed_mutex_);
+  if (developed_ != nullptr && developed_settings_ == settings) return developed_;
+
+  // Decoding again is the whole point, and it is not cheap - a full frame, on
+  // the order of a second. It is also the only way: white balance multiplies
+  // the sensor's own numbers before demosaicing, and nothing downstream of that
+  // can undo the interpolation to get back to them.
+  DecodedImage decoded = DecodeRaw(source_bytes, settings);
+  developed_ = std::make_shared<const Image16>(std::move(decoded.pixels));
+  developed_settings_ = settings;
+  return developed_;
+}
+
 std::shared_ptr<Document> DocumentStore::OpenFromMemory(std::vector<std::uint8_t> bytes,
                                                         const std::string& file_name,
                                                         const std::string& origin_path) {
@@ -133,7 +162,9 @@ std::shared_ptr<Document> DocumentStore::OpenFromMemory(std::vector<std::uint8_t
   // Colour management happens here, once, immediately after decode: everything
   // downstream works in the engine space and never has to ask what the file was.
   const color::Profile source_profile = color::Profile::FromIcc(decoded.icc);
-  Image16 working = color::ToWorking(decoded.pixels, source_profile);
+  Image16 working = decoded.in_working_space
+                        ? std::move(decoded.pixels)
+                        : color::ToWorking(decoded.pixels, source_profile);
 
   auto document = std::make_shared<Document>();
   {
@@ -149,6 +180,7 @@ std::shared_ptr<Document> DocumentStore::OpenFromMemory(std::vector<std::uint8_t
   document->file_size = static_cast<std::uint64_t>(bytes.size());
   document->source_bytes = std::move(bytes);
   document->source = std::move(working);
+  document->raw = decoded.raw;
   document->tagged = source_profile.valid();
   document->source_profile = source_profile.valid() ? source_profile.Description() : std::string();
   if (format == ImageFormat::kJpeg) {

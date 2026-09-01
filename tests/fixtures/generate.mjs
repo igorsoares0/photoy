@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { argv } from 'node:process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeDng } from './dng.mjs';
 
 /**
  * Writes the PNG fixtures the engine tests read.
@@ -95,6 +96,25 @@ export const LARGE_HEIGHT = 1800;
 
 export function generateFixtures() {
   mkdirSync(here, { recursive: true });
+
+  // A uniform half-scale neutral frame. Every raw assertion that matters -
+  // that the white point survives, that nothing brightens the image behind our
+  // back - is a statement about one pixel of this, with no demosaic edge to
+  // argue about.
+  writeDng(path.join(here, 'neutral.dng'), 64, 64, () => 32768);
+
+  // The same scene through a camera that records twice as much red for a
+  // neutral, at levels chosen so the balanced result lands on the same grey as
+  // neutral.dng. Equal channels alone would not prove much - a clipped white is
+  // also equal - so the assertion is that both files decode to the same value.
+  writeDng(
+    path.join(here, 'warm.dng'),
+    64,
+    64,
+    (x, y, channel) => (channel === 0 ? 32768 : 16384),
+    [2, 1, 1],
+  );
+
   writePng('gradient.png', 200, 120, GRADIENT);
   // Opaque on the left, fully transparent on the right, to catch colour
   // bleeding across the alpha edge during a downscale.

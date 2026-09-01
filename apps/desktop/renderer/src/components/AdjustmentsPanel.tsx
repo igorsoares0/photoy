@@ -14,6 +14,7 @@ import { PresetsPanel } from './PresetsPanel';
 import { EnhancePanel } from './EnhancePanel';
 import { ResizePanel } from './ResizePanel';
 import { PanelSection } from './PanelSection';
+import { RawPanel } from './RawPanel';
 import { Slider } from './Slider';
 
 interface Control {
@@ -232,6 +233,10 @@ export function AdjustmentsPanel(): React.JSX.Element {
                 {adjustmentLayer !== null ? <MaskPanel layer={adjustmentLayer} /> : null}
                 <EnhancePanel />
                 <PresetsPanel />
+                {/* Before the tone controls because that is the order the
+                    processing happens in: a raw file is balanced first, and
+                    everything below acts on what that produced. */}
+                <RawPanel />
                 <Group label="Luz" controls={LIGHT} />
                 <Group label="Cor" controls={COLOUR} />
                 <Group label="Detalhe" controls={DETAIL} />

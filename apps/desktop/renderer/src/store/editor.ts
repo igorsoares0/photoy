@@ -12,7 +12,7 @@ import type {
   EditHistory,
   ExportRequest,
   ExportResult,
-  ImageFormat,
+  ExportFormat,
   Operation,
   OutputSpace,
 } from '@photoy/types';
@@ -52,7 +52,7 @@ export type Busy =
 
 /** What the export dialog collects before a destination is chosen. */
 export interface ExportOptions {
-  format: ImageFormat;
+  format: ExportFormat;
   quality: number;
   colorSpace: OutputSpace;
   sixteenBit: boolean;

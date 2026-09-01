@@ -18,6 +18,7 @@ const char* FormatName(ImageFormat format) noexcept {
     case ImageFormat::kPng: return "png";
     case ImageFormat::kTiff: return "tiff";
     case ImageFormat::kWebp: return "webp";
+    case ImageFormat::kRaw: return "raw";
     case ImageFormat::kUnknown: break;
   }
   return "unknown";

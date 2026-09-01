@@ -6,10 +6,9 @@ import { locateEngine } from './engine/locate.js';
 import { Database } from './store/database';
 import { registerIpcHandlers, type IpcSurface } from './ipc/handlers.js';
 import { Recovery, Session } from './ipc/session.js';
-import { resolveReadablePath } from './ipc/paths.js';
+import { resolveReadablePath, hasReadableExtension } from './ipc/paths.js';
 import { createMainWindow } from './windows/main-window.js';
 
-const READABLE_EXTENSIONS = /\.(jpe?g|png|tiff?|webp)$/i;
 
 let engine: EngineClient | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -105,7 +104,7 @@ function guardAgainstLosingWork(window: BrowserWindow): void {
 
 /** Picks up an image passed on the command line, e.g. "Open with Photoy". */
 function pathFromArgv(argv: string[]): string | null {
-  const candidate = argv.slice(1).find((argument) => READABLE_EXTENSIONS.test(argument));
+  const candidate = argv.slice(1).find((argument) => hasReadableExtension(argument));
   if (candidate === undefined) return null;
   try {
     return resolveReadablePath(candidate);

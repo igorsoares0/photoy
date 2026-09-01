@@ -18,16 +18,23 @@ const source = path.resolve(here, '../../apps/desktop/electron/ipc/paths.ts');
  */
 export async function run() {
   const suite = createSuite('path validation');
-  const { resolveReadablePath, resolveProjectPath, resolveWritablePath } = await import(
-    `file://${source}`
-  );
+  const {
+    resolveReadablePath,
+    resolveProjectPath,
+    resolveWritablePath,
+    hasReadableExtension,
+    OPEN_FILTERS,
+    EXPORT_FILTERS,
+  } = await import(`file://${source}`);
 
   const directory = mkdtempSync(path.join(tmpdir(), 'photoy-paths-'));
   const photo = path.join(directory, 'foto.jpg');
   const project = path.join(directory, 'foto.myphoto');
   const folder = path.join(directory, 'uma-pasta');
+  const negative = path.join(directory, 'DSC00042.ARW');
   writeFileSync(photo, 'not really a jpeg');
   writeFileSync(project, 'not really a zip');
+  writeFileSync(negative, 'not really a raw file');
   mkdirSync(folder, { recursive: true });
 
   await suite.check('a photograph passes the readable gate', async () => {
@@ -46,6 +53,33 @@ export async function run() {
 
   await suite.check('a photograph does not pass the project gate', async () => {
     assert.throws(() => resolveProjectPath(photo), /Not a project/);
+  });
+
+  await suite.check('a raw file passes the readable gate, whatever its case', async () => {
+    // The extension only decides which files the guard lets through; the engine
+    // still sniffs the bytes. Rejecting here would mean the sniffer never runs.
+    assert.equal(resolveReadablePath(negative), negative);
+  });
+
+  await suite.check('raw is offered for opening but never for export', async () => {
+    // A raw file cannot be written: there is no way back from edited pixels to
+    // a sensor mosaic. The two filter lists exist so the save dialog cannot
+    // drift into offering one.
+    const openNames = OPEN_FILTERS.map((filter) => filter.name);
+    assert.ok(openNames.includes('RAW'));
+    assert.ok(EXPORT_FILTERS.every((filter) => filter.name !== 'RAW'));
+    assert.ok(EXPORT_FILTERS.every((filter) => !filter.extensions.includes('arw')));
+  });
+
+  await suite.check('the extension check and the path guard agree', async () => {
+    // Two lists that answer "can this be opened" would drift; the command line
+    // path has to accept exactly what the dialog offers.
+    assert.equal(hasReadableExtension('DSC00042.ARW'), true);
+    assert.equal(hasReadableExtension('foto.jpg'), true);
+    assert.equal(hasReadableExtension('projeto.myphoto'), false);
+    for (const extension of OPEN_FILTERS[0].extensions) {
+      assert.equal(hasReadableExtension(`x.${extension}`), true, extension);
+    }
   });
 
   await suite.check('a file that is not there is refused, not opened', async () => {

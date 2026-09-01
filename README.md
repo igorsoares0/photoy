@@ -215,6 +215,170 @@ o estado inteiro dos controles, e não um delta — é isso que a torna replayá
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
 
+### RAW
+
+A §26 pede RAW quando o público é fotógrafo, e pede uma biblioteca madura em vez
+de um decoder próprio. A escolhida é a **LibRaw**, por dois motivos que se
+somam: ela é o que praticamente todo mundo usa fora da Adobe, e a licença fecha.
+
+**LibRaw é dupla — LGPL-2.1 ou CDDL-1.0 — e a escolha é nossa. Tomamos a
+CDDL-1.0.** O copyleft dela é por arquivo: alcança modificações nas fontes da
+própria LibRaw e nada além, o que é o que a torna compatível com linkar
+estaticamente dentro de um binário proprietário. O ramo LGPL, sob link estático,
+não seria. Nada aqui modifica a LibRaw. A dependência transitiva nova é a
+`jasper`, sob JasPer License 2.0, permissiva.
+
+**O sniffer não consegue decidir sozinho.** CR2, NEF, ARW, DNG e PEF são
+containers TIFF e têm os mesmos bytes iniciais de um TIFF comum; RAF, CR3, RW2 e
+X3F têm assinaturas que o sniffer nunca viu. Então o `SniffFormat` continua
+sendo só o número mágico, barato e puro, e quem decide é o `Decode`: se o sniff
+deu TIFF ou desconhecido, ele pergunta à LibRaw, que parseia o cabeçalho e
+recusa o que não for sensor. Continua valendo a regra da casa — o conteúdo
+decide o formato, nunca a extensão — e há teste garantindo que um TIFF comum não
+é sequestrado nesse caminho.
+
+**A decodificação entrega direto no espaço de trabalho.** A LibRaw sabe emitir
+ProPhoto linear em 16 bits, que é exatamente o espaço do engine, então é isso
+que ela emite: `output_color = 4`, `gamm = {1,1}`, `output_bps = 16`. Nada de
+`no_auto_bright` desligado e nada de reconstrução de altas-luzes — clarear e
+recuperar highlights são gosto, e gosto mora na pilha de edição, não no decode.
+Um decode tem que ser reproduzível a partir do arquivo.
+
+Uma fixture sintética prova as duas coisas que importam. `tests/fixtures/dng.mjs`
+escreve um DNG à mão — nenhuma câmera envolvida, nenhum arquivo de terceiro no
+repositório —, e um quadro uniforme a meia escala sai em **[188, 188, 188]**:
+cinza exato, e exatamente o valor que a curva sRGB dá para 0,5 de luz linear.
+Se o ponto branco tivesse escorregado, apareceria como dominante; se algo
+estivesse clareando por baixo do pano, o número seria outro. Um segundo DNG
+declara uma câmera que registra o dobro de vermelho para o mesmo neutro e cai no
+mesmo 188 — que é como se prova que o white balance do arquivo foi aplicado.
+
+**A medição mudou o desenho duas vezes.** Um quadro de 24 MP abria em 7,7 s:
+
+| | tempo | por MP |
+|---|---|---|
+| primeira ligação | 7,7 s | 321 ms |
+| sem a transformação identidade | 3,4 s | 142 ms |
+| com demosaic paralelo | **1,3 s** | 53 ms |
+
+Os 4,3 s do primeiro corte eram uma **transformação de cor que não fazia nada**:
+como o RAW já chega no espaço de trabalho, o lcms percorria 24 milhões de pixels
+para não mudar nenhum, mais uma alocação e uma cópia da imagem inteira. O
+`DecodedImage` ganhou um `in_working_space`, e quem abre move os pixels em vez
+de convertê-los. Os 2,0 s seguintes eram o demosaic AHD num núcleo só; a LibRaw
+compilada com a feature `openmp` faz o mesmo trabalho em 0,9 s. Isso acrescenta
+`VCOMP140.DLL` às importações do engine, do mesmo redistribuível do Visual C++
+que já fornece `MSVCP140` e `VCRUNTIME140` — o empacotamento ganha um arquivo,
+não uma dependência nova.
+
+**A Fujifilm era o outlier, e a medição resolveu.** X-Trans ladrilha 6×6 em vez
+do 2×2 de Bayer, e o demosaic dele custava três vezes mais: 169 ms/MP contra
+52-82 das outras. A LibRaw roda Markesteijn em três passagens acima de
+`user_qual` 2 e em uma abaixo.
+
+Medido nas duas pontas, em duas fotos X-Trans de caráter oposto — um gato de
+pelo macio e um telhado com painéis solares, galhos nus e treliça, que é o
+conteúdo que gera artefato de labirinto. Uma passagem custa 40% menos e a
+diferença média é 0,04% da escala. Localizei o bloco de 256×256 onde os dois
+mais discordam em cada imagem: indistinguíveis a 100%.
+
+O número que decidiu foi a energia de detalhe, pela direção dela. Artefato de
+labirinto é detalhe *falso*, então uma passagem com artefato teria energia
+**maior**. É 0,6% menor — compatível com um pouco mais de suavização, não com
+artefato. Ficou com uma passagem, e a Fuji entrou na mesma faixa das Bayer:
+2,2 s para 24 MP contra 3,8 s antes.
+
+**RAW é só de leitura, e o tipo diz isso.** O `ImageFormat` virou o que o engine
+abre e um `ExportFormat` mais estreito virou o que ele escreve, porque não há
+volta de pixels editados para um mosaico de sensor. As duas listas de filtros de
+diálogo saem da mesma fonte que o guarda de caminhos usa, para que a caixa de
+abrir e o guarda não possam discordar sobre o que abre.
+
+### Temperatura e tint
+
+Os outros cinco controles que a §26 pede — exposição, highlights, shadows,
+sharpening, redução de ruído — já existiam como ajustes e funcionam sobre um
+documento RAW como sobre qualquer foto. Estes dois não podiam: white balance
+multiplica as leituras do sensor **antes** de o mosaico de cor ser interpolado,
+e não existe caminho de volta a essas leituras a partir de pixels prontos.
+
+Então o `developRaw` é a única operação da pilha que alcança atrás do decode.
+Mudar a temperatura decodifica o arquivo de novo. O `Document` ganhou um segundo
+buffer para isso, e o invariante que já existia foi mantido em vez de quebrado:
+os pixels continuam imutáveis depois de produzidos, só que agora podem ser
+**substituídos** por outro buffer, entregue por `shared_ptr`. Um render que já
+está lendo continua com o seu enquanto o próximo pedido troca. O cache da
+geometria passou a ter as configurações na chave — sem isso, mudar o white
+balance deixaria a forma igual e devolveria alegremente a base construída com o
+decode antigo.
+
+**A matemática é a parte que precisa estar certa, e é verificável.** Temperatura
+anda sobre o locus planckiano — as cores que um corpo negro emite ao esquentar —
+e tint sai dele, que é o eixo que uma lâmpada fluorescente ou um reflexo de
+folhagem empurram e nenhuma temperatura responde. O locus vem de um ajuste
+cúbico publicado, não da tabela de Robertson: trinta e uma linhas de constantes
+não dizem o que são. Conferido contra um padrão externo — a 2856 K ele dá
+(0,4471, 0,4075) e o iluminante A da CIE é definido nessa temperatura como
+(0,44757, 0,40745).
+
+O tint é um deslocamento em CIE 1960 UCS e não em xy, porque lá as isotermas
+cruzam o locus em ângulo reto e "fora do locus por tanto" significa a mesma
+coisa a 3000 K e a 9000 K. **O sinal é o inverso da física, de propósito:** o
+slider é rotulado pelo efeito na fotografia, e equilibrar para uma luz mais
+verde significa corrigir para magenta. Um controle rotulado pela luz andaria ao
+contrário para todo mundo que já usou um.
+
+**A prova que vale é o round trip.** A temperatura lida dos multiplicadores da
+própria câmera, devolvida como temperatura, tem que decodificar a mesma
+fotografia — e decodifica, pixel a pixel. Isso atravessa o locus, a normal do
+tint e a matriz da câmera nos dois sentidos, então qualquer erro em qualquer um
+deles apareceria como dominante. Um Nikon Z 6 fotografado sob tungstênio lê
+**3052 K**, que é onde tungstênio fica.
+
+**Onde a matriz da câmera mora, e o que isso custa.** A LibRaw preenche a
+`cam_xyz` a partir da tabela interna dela, que cobre os formatos proprietários.
+Um DNG de câmera que não está na tabela deixa isso vazio e põe a matriz no
+`dng_color`, declarada pelo próprio arquivo. Um DNG pode declarar **duas**,
+medidas sob luzes diferentes, e a resposta correta interpola entre elas na
+temperatura perguntada. Aqui pega-se a medida mais perto da luz do dia, e a
+simplificação não é pequena: no DNG de um iPhone que traz as duas, o mesmo
+arquivo lê 5463 K pela matriz de luz do dia e 4521 K pela de tungstênio.
+
+Isso custa a precisão do número na tela, não a fotografia. O arquivo intocado é
+revelado pelo balanço da própria câmera e não passa por essa matriz; depois de
+uma temperatura ser escolhida, a mesma matriz converte nos dois sentidos, então
+pedir a temperatura que o painel mostrou reproduz exatamente o que a câmera deu.
+
+**O custo, medido:** cerca de 920 ms por mudança num arquivo de 13,8 MP, contra
+30 ms quando o balanço é o da câmera e o decode já está em cache. É o decode
+inteiro de novo, e não há como não ser. Por isso estes dois sliders são os
+únicos do produto que **não** aplicam durante o arrasto: o `Slider` ganhou um
+sinal de fim de gesto, o botão segue o dedo localmente e o engine só é chamado
+quando o dedo levanta. A alternativa é um controle gaguejando um segundo atrás
+da mão. Decodificar em meia resolução durante o arrasto cortaria isso para uns
+250 ms e é o próximo passo óbvio, mas exige que o plano de preview saiba que a
+fonte encolheu, o que não é uma linha.
+
+**Recuperação de realce não entrou, e a medição é o motivo.** A §26 pede um
+controle de highlights, e o slider que existe escurece realces que ainda têm
+informação em vez de reconstruir um canal estourado a partir dos outros. Parecia
+um parâmetro da LibRaw. Não é: o modo de realce está preso à normalização da
+exposição pela linha `if (!highlight) dmax = dmin`. Em zero os multiplicadores
+de white balance são escalados pelo menor deles, todo canal é multiplicado para
+cima e o mais forte estoura — que é o brilho que as pessoas esperam. Em qualquer
+outro modo são escalados pelo maior, nada estoura, e a foto inteira escurece
+pela razão entre eles: **2,12× num Nikon Z 6**, mais de um stop.
+
+Ou seja, recuperar realce precisa de um lugar para pôr os valores acima do
+branco, e o buffer de trabalho é 16 bits sem sinal com o teto exatamente ali.
+Fazer certo é dar espaço acima do branco no espaço de trabalho — mudança no que
+um pixel significa, não um ajuste de parâmetro. Fica registrado como limite em
+vez de escondido atrás de um padrão otimista.
+
+**Os controles só aparecem quando podem responder.** Um arquivo sem matriz de
+câmera utilizável não recebe slider nenhum, porque um slider que não move a
+foto é pior que a ausência dele.
+
 ### Inferência local
 
 O engine carrega e roda modelos ONNX. A primeira operação é a **segmentação**:
@@ -754,7 +918,7 @@ apps/native/src/
   ai/         gerenciador de modelos e segmentação
   color/      definição dos espaços, perfis ICC, matriz derivada e conversão rápida
   image/      buffer RGBA8/RGBA16, resample, orientação
-  decoder/    sniffer, marcadores JPEG, EXIF, jpeg, png, tiff, webp
+  decoder/    sniffer, marcadores JPEG, EXIF, jpeg, png, tiff, webp, raw
   export/     encoders e escrita atômica
   engine/     registro de documentos e dispatch síncrono/assíncrono
 

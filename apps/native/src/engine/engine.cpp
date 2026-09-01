@@ -111,6 +111,20 @@ json DescribeOperation(const Operation& operation) {
 }
 
 /// The stack plus the size it produces, which is what the viewport needs to fit.
+/**
+ * The white balance in effect, and where it started.
+ *
+ * `custom` false means the file is showing the camera's own balance, and the
+ * temperature reported is that one - so a control seeded from this sits where
+ * the photograph actually is rather than at some invented default.
+ */
+json DescribeRawSettings(const RawSettings& settings, const RawInfo& info) {
+  const color::WhiteBalance shown = settings.custom_balance ? settings.balance : info.as_shot;
+  return json{{"custom", settings.custom_balance},
+              {"temperature", shown.kelvin},
+              {"tint", shown.tint}};
+}
+
 json DescribeHistory(const Document& document) {
   const std::lock_guard<std::mutex> lock(document.stack_mutex);
   const std::vector<Operation>& all = document.stack.All();
@@ -131,6 +145,9 @@ json DescribeHistory(const Document& document) {
               {"entries", std::move(entries)},
               {"layers", std::move(layers)},
               {"adjustments", DescribeAdjustments(FoldAdjustments(active))},
+              // Reported like the adjustments and for the same reason: the
+              // controls read their position from here, so undo moves them.
+              {"raw", DescribeRawSettings(FoldRawSettings(active), document.raw)},
               {"cursor", document.stack.cursor()},
               {"canUndo", document.stack.CanUndo()},
               {"canRedo", document.stack.CanRedo()},
@@ -164,6 +181,14 @@ json DescribeDocument(const Document& document) {
             {"orientation", static_cast<int>(document.orientation)},
             {"tagged", document.tagged},
             {"sourceProfile", document.source_profile},
+            // Present only for a raw file that carries a camera matrix, which
+            // is what the UI keys the temperature controls off: a file with no
+            // matrix gets no sliders rather than sliders that do nothing.
+            {"raw", document.format == ImageFormat::kRaw && document.raw.adjustable
+                        ? json{{"adjustable", true},
+                               {"asShotTemperature", document.raw.as_shot.kelvin},
+                               {"asShotTint", document.raw.as_shot.tint}}
+                        : json{{"adjustable", false}}},
             {"fileSize", document.file_size}}}};
 }
 
@@ -423,7 +448,8 @@ nlohmann::json Engine::Describe() const {
                json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "resize", "adjust",
                             "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",
                             "setLayerOpacity", "setLayerBlend", "setLayerMask",
-                            "setLayerFill", "setLayerDecontaminate", "setLayerPatch"})},
+                            "setLayerFill", "setLayerDecontaminate", "setLayerPatch",
+                            "developRaw"})},
               {"layerKinds", json::array({"background", "adjustment", "matte", "patch"})},
               {"fillKinds", json::array({"transparent", "color", "blur", "image"})},
               {"blendModes",
@@ -627,7 +653,9 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
   const PreviewPlan plan = PlanPreview(operations, document->source.width(),
                                        document->source.height(), document->source.width(),
                                        document->source.height());
-  const Image16 rendered = RenderGeometry(document->source, plan, token);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 rendered = RenderGeometry(*developed, plan, token);
 
   const std::shared_ptr<ai::Session> session = models_.Acquire("segmentation");
   MaskBuffer mask = ai::Segment(rendered, *session, token);
@@ -665,7 +693,9 @@ protocol::Frame Engine::DenoiseJob(std::int64_t id, const json& params,
   const int limit = std::max(64, OptionalInt(params, "maxSide", 4096));
   const PreviewPlan plan =
       PlanPreview(operations, document->source.width(), document->source.height(), limit, limit);
-  const Image16 base = RenderGeometry(document->source, plan, token);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 base = RenderGeometry(*developed, plan, token);
 
   const std::shared_ptr<ai::Session> session = models_.Acquire("denoise");
   const auto started = std::chrono::steady_clock::now();
@@ -702,7 +732,9 @@ protocol::Frame Engine::AnalyseJob(std::int64_t id, const json& params,
   constexpr int kAnalysisSide = 1024;
   const PreviewPlan plan = PlanPreview(operations, document->source.width(),
                                        document->source.height(), kAnalysisSide, kAnalysisSide);
-  const Image16 base = RenderGeometry(document->source, plan, token);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 base = RenderGeometry(*developed, plan, token);
   const std::vector<Layer> layers = FoldLayers(operations);
   const Image8 encoded =
       ComposeToOutput8(base, layers, FitMasks(*document, plan, layers),
@@ -731,7 +763,9 @@ protocol::Frame Engine::LoadBackdrop(std::int64_t id, const json& params,
   std::vector<std::uint8_t> bytes = paths::ReadAll(path);
   ImageFormat format = ImageFormat::kUnknown;
   DecodedImage decoded = Decode(bytes, &format);
-  const Image16 working = color::ToWorking(decoded.pixels, color::Profile::FromIcc(decoded.icc));
+  const Image16 working = decoded.in_working_space
+                              ? std::move(decoded.pixels)
+                              : color::ToWorking(decoded.pixels, color::Profile::FromIcc(decoded.icc));
 
   const Geometry geometry = FoldGeometry(document->ActiveOperations(), document->source.width(),
                                          document->source.height());
@@ -795,7 +829,9 @@ protocol::Frame Engine::InpaintJob(std::int64_t id, const json& params,
   const PreviewPlan plan = PlanPreview(operations, document->source.width(),
                                        document->source.height(), document->source.width(),
                                        document->source.height());
-  const Image16 rendered = RenderGeometry(document->source, plan, token);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 rendered = RenderGeometry(*developed, plan, token);
 
   const std::shared_ptr<ai::Session> session = models_.Acquire("inpainting");
   const ai::Patch patch = ai::Inpaint(rendered, *mask, *session, token);
@@ -839,11 +875,13 @@ protocol::Frame Engine::RenderPreviewJob(std::int64_t id, const json& params,
 
   // The geometry half is the expensive one and the half a slider does not
   // change, so it is reused whenever the shape of the document has not moved.
-  std::shared_ptr<const Image16> base = document->CachedBase(plan);
+  const RawSettings settings = FoldRawSettings(operations);
+  std::shared_ptr<const Image16> base = document->CachedBase(plan, settings);
   const bool reused = base != nullptr;
   if (!reused) {
-    base = std::make_shared<const Image16>(RenderGeometry(document->source, plan, token));
-    document->CacheBase(plan, base);
+    const std::shared_ptr<const Image16> developed = document->DevelopedSource(settings);
+    base = std::make_shared<const Image16>(RenderGeometry(*developed, plan, token));
+    document->CacheBase(plan, settings, base);
   }
 
   // The comparison view: the photograph with its framing but nothing done to
@@ -933,7 +971,9 @@ protocol::Frame Engine::ExportImage(std::int64_t id, const json& params,
 
   const auto started = std::chrono::steady_clock::now();
   // Export renders the same stack the preview does, only at full resolution.
-  const Image16 rendered = RenderFull(document->source, operations, token);
+  const std::shared_ptr<const Image16> developed =
+      document->DevelopedSource(FoldRawSettings(operations));
+  const Image16 rendered = RenderFull(*developed, operations, token);
   EncodeToFile(rendered, options, target_path, token);
   const double duration_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
