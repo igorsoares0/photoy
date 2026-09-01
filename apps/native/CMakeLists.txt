@@ -55,6 +55,7 @@ add_executable(photoy-engine
   src/project/mask_image.cpp
 
   src/ai/model_manager.cpp
+  src/ai/compute_dml.cpp
   src/ai/segmenter.cpp
   src/ai/face_detector.cpp
   src/ai/inpainter.cpp
@@ -104,6 +105,9 @@ target_link_libraries(photoy-engine PRIVATE
   # dependency.
   libraw::raw_r
   "${PHOTOY_ORT}/lib/onnxruntime.lib"
+  # DXGI enumerates the graphics adapters. Part of the Windows SDK, so it adds
+  # no dependency - and nothing above ai/compute.h knows it was asked.
+  dxgi
 )
 
 # The runtime is a DLL; it has to sit beside the engine to be found.

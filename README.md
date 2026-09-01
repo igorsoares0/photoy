@@ -379,6 +379,53 @@ vez de escondido atrás de um padrão otimista.
 câmera utilizável não recebe slider nenhum, porque um slider que não move a
 foto é pior que a ausência dele.
 
+### GPU, e por que ela não está ligada
+
+A §14 pede uma abstração de GPU: código de alto nível sem depender de API
+específica, Windows → DirectX, uma plataforma primeiro. A abstração existe —
+`ai/compute.h` é a interface, `ai/compute_dml.cpp` é a única coisa no engine que
+sabe o que é DXGI, e um segundo sistema é um segundo arquivo em vez de uma
+mudança em qualquer chamador. Ela enumera os adaptadores, ordena, e o
+`engine.describe` reporta o que existe e o que está sendo usado.
+
+**O que ela não faz é rodar inferência, e isso foi decidido medindo.** O caminho
+DirectML foi construído e testado contra todos os modelos que o engine carrega:
+
+| modelo | CPU | DirectML (GTX 1650) |
+|---|---|---|
+| U²-Net, segmentação | 303 ms | **30 ms** (10×) |
+| SCUNet 256, denoise | 3,3 s | 816 ms (4×) — ainda 12,45 s/MP |
+| SCUNet 512, denoise | — | **trava o driver de vídeo** |
+| LaMa, remoção de objeto | 4,8 s | **não roda** |
+
+Três achados, e nenhum deles era adivinhável.
+
+**O adaptador errado é pior que nenhum.** A Intel integrada gastou **65 segundos**
+compilando shaders para rodar a segmentação 1,3 vezes mais rápido; a discreta
+gastou 2 segundos para rodar dez vezes mais rápido. Por isso `ComputeDevice`
+distingue quem tem memória própria, e por isso a integrada é recusada em vez de
+ser usada — recusa deliberada, com o número ao lado no código.
+
+**Uma submissão longa derruba o vídeo.** O SCUNet a 512×512 devolveu
+`887A0006` — `DXGI_ERROR_DEVICE_HUNG`. O Windows tem um cão de guarda de dois
+segundos e reinicia o driver quando uma submissão passa disso. Treze segundos de
+trabalho de CPU viraram uma submissão que estourou o limite. Qualquer uso sério
+de GPU aqui precisa de ladrilhamento, não só de um provedor de execução.
+
+**O DirectML não roda o LaMa.** Falha com `80070057` num MatMul dentro da
+convolução de Fourier de que o modelo é feito. Não é questão de velocidade: o
+operador não existe naquela forma.
+
+**Então a conta não fecha.** Ligar isso pinaria o runtime na versão que o pacote
+DirectML publica — que fica atrás da usada aqui — e acrescentaria 18 MB ao
+instalador, para ganhar um décimo de segundo na única operação que já era
+rápida, mais um jeito novo de travar a máquina de quem usa. `RunningApi()`
+devolve `kCpu`, e um teste garante que continue devolvendo.
+
+**A abstração fica porque a costura é o ponto.** Uma placa maior, um runtime com
+mais operadores, ou o ladrilhamento escrito — qualquer um deles é uma mudança
+nessa função, não no engine.
+
 ### Upscale, e o segundo modelo que não deu
 
 A §23 pede 2×, 4× e preservação de detalhes. O caminho óbvio era um modelo, e

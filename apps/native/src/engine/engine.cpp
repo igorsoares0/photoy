@@ -16,6 +16,7 @@
 #include "edit/serialize.h"
 #include "ai/denoiser.h"
 #include "ai/inpainter.h"
+#include "ai/compute.h"
 #include "ai/face_detector.h"
 #include "ai/segmenter.h"
 #include "project/project.h"
@@ -441,14 +442,36 @@ protocol::Frame Engine::FetchMask(std::int64_t id, const json& params) {
   return frame;
 }
 
+/**
+ * What the machine could compute on, and what it is computing on.
+ *
+ * Reported because it is a product fact the host may want to show, and because
+ * a support conversation about "why is this slow" is much shorter when the
+ * answer is on screen.
+ */
+json DescribeCompute() {
+  json adapters = json::array();
+  for (const ai::ComputeDevice& device : ai::Devices()) {
+    adapters.push_back(json{{"name", device.name},
+                            {"memory", device.memory},
+                            {"usable", device.discrete}});
+  }
+  return json{{"running", ai::ComputeApiName(ai::RunningApi())},
+              {"available", ai::ComputeApiName(ai::PreferredApi())},
+              {"adapters", std::move(adapters)}};
+}
+
 nlohmann::json Engine::Describe() const {
   const JobQueueStats stats = jobs_.Stats();
   return json{{"name", kEngineName},
               {"version", kEngineVersion},
               {"protocolVersion", protocol::kProtocolVersion},
-              {"decodeFormats", json::array({"jpeg", "png", "tiff", "webp"})},
+              {"decodeFormats", json::array({"jpeg", "png", "tiff", "raw", "webp"})},
               {"encodeFormats", json::array({"jpeg", "png", "tiff", "webp"})},
               {"outputSpaces", json::array({"srgb", "display-p3", "adobe-rgb"})},
+              // Reported rather than acted on. The engine runs inference on the
+              // processor; see ai/compute.h for the measurements that say why.
+              {"compute", DescribeCompute()},
               {"operations",
                json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "resize", "adjust",
                             "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",

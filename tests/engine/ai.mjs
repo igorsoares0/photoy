@@ -45,6 +45,44 @@ export async function run() {
     assert.equal(model.loaded, false, 'nothing should be resident before it is asked for');
   });
 
+  await suite.check('describe reports what the machine could compute on', async () => {
+    // Machine-dependent, so the assertions are about shape and consistency
+    // rather than about this particular graphics card.
+    const { result } = await engine.call('engine.describe');
+    assert.ok(result.compute, 'no compute section');
+    assert.ok(['cpu', 'directml'].includes(result.compute.running));
+    assert.ok(['cpu', 'directml'].includes(result.compute.available));
+    assert.ok(Array.isArray(result.compute.adapters));
+  });
+
+  await suite.check('the usable adapters are listed before the rest', async () => {
+    // A caller taking the front of the list has to get the best one, and the
+    // difference is not academic: on the machine this was built on, the
+    // integrated adapter spent sixty-five seconds compiling shaders to run the
+    // segmentation model 1.3 times faster, while the discrete one ran it ten
+    // times faster after two.
+    const { result } = await engine.call('engine.describe');
+    const usable = result.compute.adapters.map((adapter) => adapter.usable);
+    assert.deepEqual([...usable].sort((a, b) => Number(b) - Number(a)), usable);
+  });
+
+  await suite.check('an adapter is only called usable when it has memory of its own', async () => {
+    const { result } = await engine.call('engine.describe');
+    for (const adapter of result.compute.adapters) {
+      if (adapter.usable) {
+        assert.ok(adapter.memory >= 2 * 1024 * 1024 * 1024, `${adapter.name} has ${adapter.memory}`);
+      }
+    }
+  });
+
+  await suite.check('the engine says it runs on the processor', async () => {
+    // Not an implementation detail: the DirectML path was built and measured,
+    // and it does not pay for itself. If this ever changes it should change
+    // deliberately, with this test as the place that notices.
+    const { result } = await engine.call('engine.describe');
+    assert.equal(result.compute.running, 'cpu');
+  });
+
   await suite.check('segmentation finds the subject and loads the model on demand', async () => {
     const documentId = await open();
     const { result } = await engine.call('ai.segment', { documentId });
