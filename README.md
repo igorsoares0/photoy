@@ -262,6 +262,51 @@ em tons de cinza por máscara — em tons de cinza porque é o que uma máscara 
 porque abrir `masks/1.png` em qualquer visualizador deve mostrar a máscara, não
 um enigma.
 
+### Reduzir ruído, e um modelo que não deu
+
+A §22 pede redução de ruído com controles de intensidade e preservação de
+detalhes. O caminho óbvio era o mesmo do LaMa — achar um modelo permissivo,
+baixar, integrar —, e ele foi percorrido até o fim: **SCUNet**, Apache-2.0 sem
+cláusula separada para os pesos, com export ONNX de entrada dinâmica em altura e
+largura. Tudo certo, menos uma coisa.
+
+**Cinquenta e três segundos por megapixel na CPU.** Medido em dois tamanhos, com
+escala linear: dez minutos para uma foto de celular de 12 MP, vinte e um para
+24 MP. Ladrilhar não ajudaria — o custo é linear no número de pixels, então
+tiles mudam a memória e não a espera. É a arquitetura: um híbrido
+Swin-transformer de dezoito milhões de parâmetros.
+
+Então o denoise que existe é **clássico, e roda em toda máquina**: um filtro
+guiado. Para cada vizinhança ele ajusta a reta que melhor prevê a imagem a
+partir dela mesma, e o `epsilon` é quanta variância ele aceita chamar de ruído
+em vez de sinal. Onde a variância está muito acima disso — uma borda — o ajuste
+é a identidade e nada é tocado; onde está muito abaixo — grão chapado — ele
+colapsa na média local e o grão vai embora. Custa o mesmo em qualquer raio,
+porque tudo nele é média de caixa, e média de caixa é soma corrente: os mesmos
+`BoxHorizontal`/`BoxVertical` que a nitidez já usava.
+
+**~0,17 s/MP**, contra 53. Trezentas e vinte vezes mais rápido, dois segundos
+numa foto de 12 MP na exportação.
+
+Ele filtra no domínio **codificado**, não em luz linear: em luz linear o grão de
+uma sombra é numericamente minúsculo e seria poupado, embora seja justamente o
+grão que as pessoas veem. E usa **um guia só** para os três canais, para que
+sejam suavizados ao longo da mesma estrutura e uma borda não se desfaça em
+franjas coloridas.
+
+Os dois controles da §22 caem naturalmente: **intensidade** é o epsilon, e
+**preservar detalhe** repõe a diferença de brilho que a suavização custou. Ruído
+de cor vai embora inteiro e não volta — suavizar cor não custa detalhe nenhum,
+porque detalhe é carregado pelo brilho, e ruído de cor é a metade que vale
+remover sem dó. O denoise roda **antes** de nitidez e clareza, porque afiar
+ruído é como um denoiser leva a culpa por piorar a foto.
+
+O SCUNet ficou na árvore, com licença verificada e conversão correta, alcançável
+por `ai.denoise` e por nada na interface. No dia em que a inferência rodar na
+GPU ele vira o denoiser melhor e o filtro guiado continua sendo o que funciona
+em qualquer lugar. Ele não está no `setup-windows.bat` de propósito: setenta
+megabytes por algo inalcançável não é um download para fazer alguém esperar.
+
 ### Melhorar foto
 
 A §21 pede uma função que analise a fotografia e **gere uma lista explícita de

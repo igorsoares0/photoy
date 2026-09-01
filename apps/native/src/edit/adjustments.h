@@ -41,6 +41,15 @@ struct Adjustments {
    */
   float sharpen = 0.0f;  // 0 .. 100
   float clarity = 0.0f;  // -100 .. 100
+  /**
+   * Noise reduction, and how much of the fine detail to put back afterwards.
+   *
+   * Colour noise is always removed in full: smoothing colour costs no detail,
+   * because detail is carried by brightness. What `denoise_detail` restores is
+   * the brightness detail, which is the half that smoothing does cost.
+   */
+  float denoise = 0.0f;         // 0 .. 100
+  float denoise_detail = 50.0f;  // 0 .. 100
   /// Warmer above zero, cooler below.
   float temperature = 0.0f;  // -100 .. 100
 

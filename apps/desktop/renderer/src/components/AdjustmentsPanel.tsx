@@ -81,6 +81,15 @@ const COLOUR: Control[] = [
 
 /** Local contrast: the two that look at a pixel's neighbours. */
 const DETAIL: Control[] = [
+  { key: 'denoise', label: 'Reduzir ruído', min: 0, max: 100, step: 1, format: (v) => formatInteger(v) },
+  {
+    key: 'denoiseDetail',
+    label: 'Preservar detalhe',
+    min: 0,
+    max: 100,
+    step: 1,
+    format: (v) => formatInteger(v),
+  },
   { key: 'sharpen', label: 'Nitidez', min: 0, max: 100, step: 1, format: (v) => formatInteger(v) },
   { key: 'clarity', label: 'Clareza', min: -100, max: 100, step: 1, format: (v) => formatSigned(v) },
 ];

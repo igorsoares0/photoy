@@ -32,12 +32,21 @@ struct CatalogueEntry {
   const char* source;
 };
 
-constexpr std::array<CatalogueEntry, 2> kCatalogue{{
+constexpr std::array<CatalogueEntry, 3> kCatalogue{{
     {"segmentation", "u2netp.onnx", "Apache-2.0", "U^2-Net"},
     // LaMa: advimman/lama is Apache-2.0 with no separate clause for the
     // weights, and OpenCV redistributes this export under the same, checked
     // against the LICENSE in their repository rather than a summary of it.
     {"inpainting", "lama.onnx", "Apache-2.0", "LaMa (big-lama)"},
+    // SCUNet: cszn/SCUNet is Apache-2.0 with no separate clause for the
+    // weights, and the ONNX re-export carries the same. The blind real-world
+    // PSNR variant rather than the GAN one: a GAN denoiser invents plausible
+    // texture, and inventing texture in a photograph is a lie.
+    //
+    // Its weights live in a sibling `.onnx.data`, which the runtime finds by
+    // the name recorded inside the graph - which is why the file keeps the
+    // name it was published under rather than a tidier one.
+    {"denoise", "scunet_color_real_psnr.onnx", "Apache-2.0", "SCUNet (blind real, PSNR)"},
 }};
 
 std::wstring Widen(const std::string& utf8) {

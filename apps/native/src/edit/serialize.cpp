@@ -32,6 +32,8 @@ json AdjustmentsToJson(const Adjustments& a) {
               {"grain", a.grain},
               {"sharpen", a.sharpen},
               {"clarity", a.clarity},
+              {"denoise", a.denoise},
+              {"denoiseDetail", a.denoise_detail},
               {"temperature", a.temperature}};
 }
 
@@ -50,6 +52,8 @@ Adjustments AdjustmentsFromJson(const json& value) {
   a.grain = std::clamp(OptionalFloat(v, "grain", 0.0f), 0.0f, 100.0f);
   a.sharpen = std::clamp(OptionalFloat(v, "sharpen", 0.0f), 0.0f, 100.0f);
   a.clarity = std::clamp(OptionalFloat(v, "clarity", 0.0f), -100.0f, 100.0f);
+  a.denoise = std::clamp(OptionalFloat(v, "denoise", 0.0f), 0.0f, 100.0f);
+  a.denoise_detail = std::clamp(OptionalFloat(v, "denoiseDetail", 50.0f), 0.0f, 100.0f);
   a.temperature = std::clamp(OptionalFloat(v, "temperature", 0.0f), -100.0f, 100.0f);
   return a;
 }

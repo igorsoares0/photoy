@@ -23,6 +23,8 @@ const ADJUSTMENT_LABELS: Record<AdjustmentKey, string> = {
   grain: 'Grão',
   sharpen: 'Nitidez',
   clarity: 'Clareza',
+  denoise: 'Ruído',
+  denoiseDetail: 'Detalhe no ruído',
   temperature: 'Temperatura',
 };
 

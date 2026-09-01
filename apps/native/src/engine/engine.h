@@ -58,6 +58,8 @@ class Engine {
   protocol::Frame FetchMask(std::int64_t id, const nlohmann::json& params);
   protocol::Frame InpaintJob(std::int64_t id, const nlohmann::json& params,
                              const CancellationTokenPtr& token);
+  protocol::Frame DenoiseJob(std::int64_t id, const nlohmann::json& params,
+                             const CancellationTokenPtr& token);
   /// Measures the document as it currently looks, for the enhancement panel.
   protocol::Frame AnalyseJob(std::int64_t id, const nlohmann::json& params,
                              const CancellationTokenPtr& token);

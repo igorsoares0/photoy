@@ -50,6 +50,7 @@ add_executable(photoy-engine
   src/ai/model_manager.cpp
   src/ai/segmenter.cpp
   src/ai/inpainter.cpp
+  src/ai/denoiser.cpp
 
   src/jobs/job_queue.cpp
 

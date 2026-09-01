@@ -557,6 +557,108 @@ export async function run() {
     await engine.call('image.close', { documentId: busy });
   });
 
+  /** How much a row wobbles from pixel to pixel: what noise looks like. */
+  const wobble = async (documentId, y, from, to) => {
+    const preview = await engine.call('image.renderPreview', {
+      documentId, maxWidth: 4000, maxHeight: 4000,
+    });
+    let sum = 0;
+    for (let x = from + 1; x < to; x += 1) {
+      sum += Math.abs(
+        pixelAt(preview.payload, preview.result.stride, x, y)[0] -
+          pixelAt(preview.payload, preview.result.stride, x - 1, y)[0],
+      );
+    }
+    return sum / (to - from - 1);
+  };
+
+  await suite.check('denoising quietens the grain', async () => {
+    const documentId = await openFile('noisy.png');
+    const before = await wobble(documentId, 80, 10, 110);
+    assert.ok(before > 8, `the fixture is not noisy: ${before.toFixed(1)}`);
+
+    await adjust(documentId, { denoise: 100, denoiseDetail: 0 });
+    const after = await wobble(documentId, 80, 10, 110);
+    assert.ok(after < before / 2, `grain barely moved: ${before.toFixed(1)} -> ${after.toFixed(1)}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('denoising leaves the edge where it was', async () => {
+    // The whole difference between a denoiser and a blur. noisy.png is two flat
+    // halves, so the step across the middle has to survive.
+    const documentId = await openFile('noisy.png');
+    const step = async () => {
+      const preview = await engine.call('image.renderPreview', {
+        documentId, maxWidth: 4000, maxHeight: 4000,
+      });
+      const at = (x) => pixelAt(preview.payload, preview.result.stride, x, 80)[0];
+      return at(130) - at(109);
+    };
+    const before = await step();
+    await adjust(documentId, { denoise: 100, denoiseDetail: 0 });
+    const after = await step();
+    assert.ok(after > before * 0.8, `the edge was smeared: ${before} -> ${after}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('preserving detail puts the grain back', async () => {
+    // The control has to do something, and what it does is restore brightness
+    // detail - which on this fixture is the grain itself.
+    const documentId = await openFile('noisy.png');
+    await adjust(documentId, { denoise: 100, denoiseDetail: 0 });
+    const smoothed = await wobble(documentId, 80, 10, 110);
+    await adjust(documentId, { denoise: 100, denoiseDetail: 100 });
+    const restored = await wobble(documentId, 80, 10, 110);
+    assert.ok(restored > smoothed, `detail was not restored: ${smoothed.toFixed(1)} -> ${restored.toFixed(1)}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('denoising at zero changes nothing at all', async () => {
+    const documentId = await openFile('noisy.png');
+    const before = await sample(documentId);
+    await adjust(documentId, { denoise: 0, denoiseDetail: 80 });
+    const after = await sample(documentId);
+    assert.deepEqual(after(0.3, 0.5), before(0.3, 0.5));
+    assert.deepEqual(after(0.7, 0.5), before(0.7, 0.5));
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('a mask confines denoising to where it applies', async () => {
+    const documentId = await openFile('noisy.png');
+    const before = await wobble(documentId, 80, 10, 110);
+    await engine.call('edit.apply', {
+      documentId, operation: { kind: 'addLayer', name: 'Ruído' },
+    });
+    const { result: history } = await engine.call('edit.history', { documentId });
+    const layerId = history.layers.at(-1).id;
+    await engine.call('edit.apply', {
+      documentId,
+      operation: {
+        kind: 'setLayerMask', layerId,
+        mask: { kind: 'radial', x: 0.85, y: 0.5, radius: 0.1, feather: 0.02 },
+      },
+    });
+    await engine.call('edit.apply', {
+      documentId, operation: { kind: 'adjust', layerId, adjustments: { denoise: 100, denoiseDetail: 0 } },
+    });
+    const after = await wobble(documentId, 80, 10, 110);
+    assert.ok(Math.abs(after - before) < 0.5, `denoising escaped its mask: ${before} -> ${after}`);
+    await engine.call('image.close', { documentId });
+  });
+
+  await suite.check('denoising survives a project round trip', async () => {
+    const documentId = await openFile('noisy.png');
+    await adjust(documentId, { denoise: 70, denoiseDetail: 30 });
+    const target = path.join(workDir, 'denoised.myphoto');
+    await engine.call('project.save', { documentId, path: target });
+    await engine.call('image.close', { documentId });
+
+    const opened = await engine.call('project.open', { path: target });
+    assert.equal(opened.result.history.adjustments.denoise, 70);
+    assert.equal(opened.result.history.adjustments.denoiseDetail, 30);
+    await engine.call('image.close', { documentId: opened.result.id });
+  });
+
   engine.close();
   rmSync(workDir, { recursive: true, force: true });
   return suite.report();

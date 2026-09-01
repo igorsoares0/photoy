@@ -14,6 +14,7 @@
 #include "edit/render.h"
 #include "image/resample.h"
 #include "edit/serialize.h"
+#include "ai/denoiser.h"
 #include "ai/inpainter.h"
 #include "ai/segmenter.h"
 #include "project/project.h"
@@ -54,6 +55,8 @@ json DescribeAdjustments(const Adjustments& a) {
               {"grain", a.grain},
               {"sharpen", a.sharpen},
               {"clarity", a.clarity},
+              {"denoise", a.denoise},
+              {"denoiseDetail", a.denoise_detail},
               {"temperature", a.temperature}};
 }
 
@@ -260,7 +263,8 @@ void Engine::Dispatch(const nlohmann::json& header,
         MakeFailure(id, error_code::kInternalError, "Unexpected engine failure", failure.what()));
   }
 
-  const bool known = method == "ai.inpaint" || method == "background.load" ||
+  const bool known = method == "ai.inpaint" || method == "ai.denoise" ||
+                     method == "background.load" ||
                      method == "image.analyse" || method == "image.open" ||
                      method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
@@ -292,6 +296,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                        response = LoadBackdrop(id, params, token);
                      } else if (method == "image.analyse") {
                        response = AnalyseJob(id, params, token);
+                     } else if (method == "ai.denoise") {
+                       response = DenoiseJob(id, params, token);
                      } else if (method == "image.renderPreview") {
                        response = RenderPreviewJob(id, params, token);
                      } else {
@@ -332,9 +338,8 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
       return estimate::Open(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
-    if (method == "ai.segment" || method == "ai.inpaint") {
-      return ai::ModelManager::MemoryEstimate(method == "ai.inpaint" ? "inpainting"
-                                                                    : "segmentation");
+    if (method == "ai.segment" || method == "ai.inpaint" || method == "ai.denoise") {
+      return ai::ModelManager::MemoryEstimate(method);
     }
     if (method == "project.save") {
       // Saving holds the archive and a copy of it in memory at the same time.
@@ -636,6 +641,54 @@ protocol::Frame Engine::SegmentJob(std::int64_t id, const json& params,
                               {"raster", raster},
                               {"width", plan.geometry.NaturalWidth()},
                               {"height", plan.geometry.NaturalHeight()}});
+}
+
+/**
+ * SCUNet denoising, which nothing in the interface reaches.
+ *
+ * Measured at roughly fifty-three seconds a megapixel on this machine's CPU -
+ * ten minutes for a phone photograph - so it is not something to offer. The
+ * cost is linear in pixels, so tiling would change the memory and not the wait.
+ *
+ * Kept rather than deleted because none of it is wrong: the licence is checked,
+ * the graph takes any size, and the conversion either way is right. The day
+ * inference runs on the GPU this becomes the better denoiser and the guided
+ * filter in `edit/detail.cpp` stays as the one that works everywhere. The model
+ * is deliberately absent from `setup-windows.bat`: seventy megabytes for
+ * something unreachable is not a download to make people wait for.
+ */
+protocol::Frame Engine::DenoiseJob(std::int64_t id, const json& params,
+                                   const CancellationTokenPtr& token) {
+  const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
+  const std::vector<Operation> operations = document->ActiveOperations();
+
+  const int limit = std::max(64, OptionalInt(params, "maxSide", 4096));
+  const PreviewPlan plan =
+      PlanPreview(operations, document->source.width(), document->source.height(), limit, limit);
+  const Image16 base = RenderGeometry(document->source, plan, token);
+
+  const std::shared_ptr<ai::Session> session = models_.Acquire("denoise");
+  const auto started = std::chrono::steady_clock::now();
+  const Image16 cleaned = ai::Denoise(base, *session, token);
+  const double elapsed =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+  log::Info("denoised " + std::to_string(cleaned.width()) + "x" + std::to_string(cleaned.height()) +
+            " in " + std::to_string(elapsed) + " ms");
+
+  PatchBuffer stored;
+  stored.region = Rect{0, 0, plan.geometry.NaturalWidth(), plan.geometry.NaturalHeight()};
+  stored.document_width = plan.geometry.NaturalWidth();
+  stored.document_height = plan.geometry.NaturalHeight();
+  stored.pixels = color::ToOutput8(cleaned, color::OutputSpace::kSrgb, token);
+  const std::uint64_t identifier = document->StorePatch(std::move(stored));
+
+  return MakeSuccess(id, json{{"documentId", document->id},
+                              {"patch", identifier},
+                              {"patchWidth", plan.geometry.NaturalWidth()},
+                              {"patchHeight", plan.geometry.NaturalHeight()},
+                              {"renderedWidth", cleaned.width()},
+                              {"renderedHeight", cleaned.height()},
+                              {"milliseconds", elapsed}});
 }
 
 protocol::Frame Engine::AnalyseJob(std::int64_t id, const json& params,

@@ -107,6 +107,25 @@ export function generateFixtures() {
   // mask under test and nothing else, and the aspect catches a radial mask that
   // has been stretched into an ellipse.
   writePng('flat.png', 400, 200, () => [128, 128, 128, 255]);
+
+  // Two flat halves with noise laid over them: the noise is what a denoiser has
+  // to remove and the boundary between them is what it has to leave alone.
+  // Deterministic, so a test measures the filter and not the weather.
+  let seed = 12345;
+  const noise = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return ((seed >> 8) % 61) - 30;
+  };
+  writePng('noisy.png', 240, 160, (x) => {
+    const base = x < 120 ? 90 : 170;
+    const shift = noise();
+    return [
+      Math.max(0, Math.min(255, base + shift)),
+      Math.max(0, Math.min(255, base + shift)),
+      Math.max(0, Math.min(255, base + shift)),
+      255,
+    ];
+  });
   // A subject against a background: a head and shoulders in a warm tone over a
   // cool gradient. Segmentation needs something salient to find, and a flat
   // field or a gradient gives it nothing.

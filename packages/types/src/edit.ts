@@ -186,6 +186,15 @@ export interface Adjustments {
    */
   sharpen: number;
   clarity: number;
+  /**
+   * Noise reduction, and how much fine detail to put back afterwards.
+   *
+   * Colour noise always goes in full: smoothing colour costs no detail, because
+   * detail is carried by brightness. What `denoiseDetail` restores is the
+   * brightness detail, which is the half that smoothing does cost.
+   */
+  denoise: number;
+  denoiseDetail: number;
   temperature: number;
 }
 
@@ -204,6 +213,10 @@ export const NEUTRAL_ADJUSTMENTS: Adjustments = {
   grain: 0,
   sharpen: 0,
   clarity: 0,
+  denoise: 0,
+  // Half by default, and only meaningful once denoise is above zero - which is
+  // why a fresh document is still neutral despite this not being zero.
+  denoiseDetail: 50,
   temperature: 0,
 };
 

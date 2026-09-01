@@ -107,7 +107,7 @@ bool Adjustments::IsNeutral() const noexcept {
   return exposure == 0.0f && brightness == 0.0f && contrast == 0.0f && highlights == 0.0f &&
          shadows == 0.0f && saturation == 0.0f && vibrance == 0.0f && hue == 0.0f &&
          vignette == 0.0f && grain == 0.0f && sharpen == 0.0f && clarity == 0.0f &&
-         temperature == 0.0f;
+         denoise == 0.0f && temperature == 0.0f;
 }
 
 bool Adjustments::operator==(const Adjustments& other) const noexcept {
@@ -116,6 +116,7 @@ bool Adjustments::operator==(const Adjustments& other) const noexcept {
          shadows == other.shadows && saturation == other.saturation &&
          vibrance == other.vibrance && hue == other.hue && vignette == other.vignette &&
          grain == other.grain && sharpen == other.sharpen && clarity == other.clarity &&
+         denoise == other.denoise && denoise_detail == other.denoise_detail &&
          temperature == other.temperature;
 }
 

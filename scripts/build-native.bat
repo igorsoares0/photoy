@@ -46,6 +46,7 @@ copy /y "%BUILD_DIR%\bin\onnxruntime.dll" "%ENGINE_OUT%\onnxruntime.dll" >nul
 if not exist "%ENGINE_OUT%\models" mkdir "%ENGINE_OUT%\models"
 copy /y "%PHOTOY_ROOT%\.tooling\models\u2netp.onnx" "%ENGINE_OUT%\models\u2netp.onnx" >nul
 if exist "%PHOTOY_ROOT%\.tooling\models\lama.onnx" copy /y "%PHOTOY_ROOT%\.tooling\models\lama.onnx" "%ENGINE_OUT%\models\lama.onnx" >nul
+if exist "%PHOTOY_ROOT%\.tooling\models\scunet_color_real_psnr.onnx" copy /y "%PHOTOY_ROOT%\.tooling\models\scunet_color_real_psnr.onnx*" "%ENGINE_OUT%\models\" >nul
 
 echo [photoy] engine built: %ENGINE_OUT%\photoy-engine.exe
 exit /b 0
