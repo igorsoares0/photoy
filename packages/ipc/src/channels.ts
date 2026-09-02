@@ -34,6 +34,15 @@ export const Channels = {
   presetSave: 'photoy:preset.save',
   presetDelete: 'photoy:preset.delete',
   recentList: 'photoy:recent.list',
+  libraryChooseFolder: 'photoy:library.chooseFolder',
+  libraryOpenFolder: 'photoy:library.openFolder',
+  libraryRecentFolders: 'photoy:library.recentFolders',
+  libraryThumbnail: 'photoy:library.thumbnail',
+  libraryFavourite: 'photoy:library.favourite',
+  libraryFavourites: 'photoy:library.favourites',
+  batchRun: 'photoy:batch.run',
+  batchCancel: 'photoy:batch.cancel',
+  batchChooseDirectory: 'photoy:batch.chooseDirectory',
   sessionBootstrap: 'photoy:session.bootstrap',
 } as const;
 
@@ -42,6 +51,7 @@ export const Events = {
   engineStateChanged: 'photoy:engine.stateChanged',
   openRequested: 'photoy:shell.openRequested',
   projectChanged: 'photoy:project.changed',
+  batchProgress: 'photoy:batch.progress',
 } as const;
 
 export type ChannelName = (typeof Channels)[keyof typeof Channels];

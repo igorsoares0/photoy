@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from './store/editor';
+import { useLibrary } from './store/library';
 import { AdjustmentsPanel } from './components/AdjustmentsPanel';
 import { Canvas } from './components/Canvas';
 import { CropOverlay } from './components/CropOverlay';
 import { BrushOverlay } from './components/BrushOverlay';
 import { MaskOverlay } from './components/MaskOverlay';
+import { BatchDialog } from './components/BatchDialog';
 import { EmptyState } from './components/EmptyState';
+import { Filmstrip } from './components/Filmstrip';
+import { LibraryView } from './components/LibraryView';
 import { ExportDialog } from './components/ExportDialog';
 import { Notices } from './components/Notices';
 import { StatusBar } from './components/StatusBar';
@@ -16,9 +20,22 @@ import { ZoomHud } from './components/ZoomHud';
 export function App(): React.JSX.Element {
   const stageRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [batching, setBatching] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /**
+   * Which of the two things the window is showing.
+   *
+   * The library is the home: with nothing open there is nothing to edit, and a
+   * folder is what a person has before they have a photograph. Opening one
+   * moves here, and the rail moves back.
+   */
+  const [browsing, setBrowsing] = useState(true);
 
   const document = useEditor((state) => state.document);
+  const folderOpen = useLibrary((state) => state.folder !== null);
+  const setProgress = useLibrary((state) => state.setProgress);
+  const copyAdjustments = useEditor((state) => state.copyAdjustments);
+  const pasteAdjustments = useEditor((state) => state.pasteAdjustments);
   const openDialog = useEditor((state) => state.openDialog);
   const openPath = useEditor((state) => state.openPath);
   const setEngineState = useEditor((state) => state.setEngineState);
@@ -40,6 +57,9 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const stopState = window.photoy.onEngineStateChanged(setEngineState);
+    const stopBatch = window.photoy.onBatchProgress((progress) =>
+      setProgress(progress.done, progress.total, progress.current),
+    );
     const stopOpen = window.photoy.onOpenRequested((path) => void openPath(path));
     const stopProject = window.photoy.onProjectChanged(setProjectState);
 
@@ -56,8 +76,15 @@ export function App(): React.JSX.Element {
       stopState();
       stopOpen();
       stopProject();
+      stopBatch();
     };
-  }, [setEngineState, openPath, setProjectState, offerRecovery]);
+  }, [setEngineState, openPath, setProjectState, offerRecovery, setProgress]);
+
+  // Opening a photograph is the gesture that leaves the library, wherever it
+  // came from: a tile, the recent list, a drop, or the shell.
+  useEffect(() => {
+    if (document !== null) setBrowsing(false);
+  }, [document]);
 
   const fit = useCallback(() => {
     const box = stageRef.current?.getBoundingClientRect();
@@ -80,6 +107,23 @@ export function App(): React.JSX.Element {
       if (accel && event.key === 'e' && document !== null) {
         event.preventDefault();
         setExporting(true);
+        return;
+      }
+      // Copying a look and putting it on the next photograph, which is the
+      // gesture a folder of two hundred is edited with.
+      if (accel && event.shiftKey && event.key.toLowerCase() === 'c' && document !== null) {
+        event.preventDefault();
+        copyAdjustments();
+        return;
+      }
+      if (accel && event.shiftKey && event.key.toLowerCase() === 'v' && document !== null) {
+        event.preventDefault();
+        void pasteAdjustments();
+        return;
+      }
+      if (accel && event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        setBrowsing((current) => !current);
         return;
       }
       if (document === null) return;
@@ -157,6 +201,8 @@ export function App(): React.JSX.Element {
     openProject,
     saveProject,
     saveProjectAs,
+    copyAdjustments,
+    pasteAdjustments,
   ]);
 
   // Drag and drop. The path is resolved in the preload and re-validated in the
@@ -189,20 +235,32 @@ export function App(): React.JSX.Element {
       <TitleBar onExport={() => setExporting(true)} />
 
       <div className="flex min-h-0 flex-1">
-        <ToolRail />
-        <div ref={stageRef} className="relative flex min-h-0 min-w-0 flex-1">
-          <Canvas />
-          <CropOverlay container={stageRef} />
-          <MaskOverlay container={stageRef} />
-          <BrushOverlay container={stageRef} />
-          {document === null ? (
-            <EmptyState dragging={dragging} />
-          ) : (
-            <ZoomHud viewportRef={stageRef} />
-          )}
-          <Notices />
-          {exporting ? <ExportDialog onClose={() => setExporting(false)} /> : null}
-        </div>
+        <ToolRail browsing={browsing} onBrowse={() => setBrowsing(!browsing)} />
+        {browsing ? (
+          <div className="relative flex min-h-0 min-w-0 flex-1">
+            <LibraryView onOpenBatch={() => setBatching(true)} />
+            <Notices />
+            {batching ? <BatchDialog onClose={() => setBatching(false)} /> : null}
+          </div>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div ref={stageRef} className="relative flex min-h-0 min-w-0 flex-1">
+              <Canvas />
+              <CropOverlay container={stageRef} />
+              <MaskOverlay container={stageRef} />
+              <BrushOverlay container={stageRef} />
+              {document === null ? (
+                <EmptyState dragging={dragging} />
+              ) : (
+                <ZoomHud viewportRef={stageRef} />
+              )}
+              <Notices />
+              {exporting ? <ExportDialog onClose={() => setExporting(false)} /> : null}
+              {batching ? <BatchDialog onClose={() => setBatching(false)} /> : null}
+            </div>
+            {folderOpen ? <Filmstrip /> : null}
+          </div>
+        )}
         <AdjustmentsPanel />
       </div>
 

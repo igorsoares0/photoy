@@ -153,6 +153,23 @@ color::Multipliers CameraMultipliers(const LibRaw& raw) {
   return {static_cast<double>(mul[0]) / mul[1], 1.0, static_cast<double>(mul[2]) / mul[1]};
 }
 
+/**
+ * LibRaw's flip code as an orientation.
+ *
+ * The embedded preview is stored the way the sensor read it, so unlike the
+ * demosaiced frame - which LibRaw rotates itself - it still owes the rotation
+ * the camera recorded. The codes are dcraw's, not EXIF's, and the mapping is
+ * not the identity: 3 is a half turn and 5 and 6 are the two quarter turns.
+ */
+Orientation OrientationFromFlip(int flip) noexcept {
+  switch (flip) {
+    case 3: return Orientation::kBottomRight;  // 180 degrees
+    case 5: return Orientation::kLeftBottom;   // 90 degrees anticlockwise
+    case 6: return Orientation::kRightTop;     // 90 degrees clockwise
+    default: return Orientation::kTopLeft;
+  }
+}
+
 }  // namespace
 
 bool IsRaw(const std::vector<std::uint8_t>& bytes) noexcept {
@@ -168,6 +185,40 @@ bool IsRaw(const std::vector<std::uint8_t>& bytes) noexcept {
   // A DNG can wrap an already-demosaiced image, and open_buffer accepts it.
   // Those are ordinary TIFFs as far as we are concerned.
   return raw->imgdata.idata.raw_count > 0;
+}
+
+std::vector<std::uint8_t> RawPreview(const std::vector<std::uint8_t>& bytes,
+                                     RawPreviewInfo* out_info) {
+  RawHandle raw;
+  raw->set_dataerror_handler(SilenceDataErrors, nullptr);
+
+  int status = raw->open_buffer(const_cast<std::uint8_t*>(bytes.data()), bytes.size());
+  if (status != LIBRAW_SUCCESS) Fail(status, "open_buffer");
+  if (out_info != nullptr) {
+    out_info->orientation = OrientationFromFlip(raw->imgdata.sizes.flip);
+    // The visible area, which is smaller than the sensor: a raw frame carries a
+    // margin the manufacturer masks off. Reported upright, because the size a
+    // person means is the size of the photograph they would see.
+    const int width = raw->imgdata.sizes.width;
+    const int height = raw->imgdata.sizes.height;
+    const bool swapped = SwapsAxes(out_info->orientation);
+    out_info->width = swapped ? height : width;
+    out_info->height = swapped ? width : height;
+  }
+
+  status = raw->unpack_thumb();
+  // A file with no preview is not a broken file: it is a file to decode the
+  // long way, so the empty answer travels back rather than an exception.
+  if (status != LIBRAW_SUCCESS) return {};
+
+  const libraw_thumbnail_t& thumb = raw->imgdata.thumbnail;
+  // Only the JPEG form is taken. The bitmap forms are rare, and handing them
+  // back would mean this function returning two different kinds of thing.
+  if (thumb.tformat != LIBRAW_THUMBNAIL_JPEG || thumb.thumb == nullptr || thumb.tlength == 0) {
+    return {};
+  }
+  const auto* first = reinterpret_cast<const std::uint8_t*>(thumb.thumb);
+  return std::vector<std::uint8_t>(first, first + thumb.tlength);
 }
 
 DecodedImage DecodeRaw(const std::vector<std::uint8_t>& bytes, const RawSettings& settings) {

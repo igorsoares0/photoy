@@ -81,6 +81,7 @@ add_executable(photoy-engine
   src/export/webp_encoder.cpp
   src/export/encode.cpp
 
+  src/engine/thumbnail.cpp
   src/engine/document_store.cpp
   src/engine/engine.cpp
 )

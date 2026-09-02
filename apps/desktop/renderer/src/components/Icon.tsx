@@ -18,7 +18,13 @@ export type IconName =
   | 'compare'
   | 'undo'
   | 'redo'
-  | 'reset';
+  | 'reset'
+  | 'grid'
+  | 'star'
+  | 'search'
+  | 'copy'
+  | 'paste'
+  | 'stack';
 
 const PATHS: Record<IconName, string[]> = {
   rotateCw: ['M21 2v6h-6', 'M21 12a9 9 0 1 1-3-7.7L21 8'],
@@ -55,6 +61,16 @@ const PATHS: Record<IconName, string[]> = {
   undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
   redo: ['m15 14 5-5-5-5', 'M20 9H9.5a5.5 5.5 0 0 0 0 11H13'],
   reset: ['M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.4 2.6L3 8', 'M3 3v5h5'],
+  // Four panes: the folder as a contact sheet, which is what the library is.
+  grid: ['M3 3h7v7H3z', 'M14 3h7v7h-7z', 'M14 14h7v7h-7z', 'M3 14h7v7H3z'],
+  // Outlined like everything else here. A filled star would be the only filled
+  // shape in the set, so a marked photograph is said in colour instead.
+  star: ['m12 3 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z'],
+  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'm20 20-4-4'],
+  copy: ['M9 9h10v12H9z', 'M15 5H5v12h2'],
+  paste: ['M9 4h6v3H9z', 'M9 5H6v16h12V5h-3', 'M9 13h6', 'M9 17h4'],
+  // Sheets of paper, one behind another: many photographs, one action.
+  stack: ['M12 3 3 8l9 5 9-5z', 'm3 13 9 5 9-5', 'm3 18 9 4 9-4'],
 };
 
 export function Icon({ name, size = 17 }: { name: IconName; size?: number }): React.JSX.Element {

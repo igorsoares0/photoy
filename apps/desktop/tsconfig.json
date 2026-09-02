@@ -2,6 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
+    // The main process is bundled by esbuild and the renderer by Vite, so
+    // nothing here is emitted by tsc. Importing a .ts path directly is what
+    // lets the same files be run by node --experimental-strip-types in the
+    // tests, which is the only way the batch loop gets exercised without an
+    // Electron window around it.
+    "allowImportingTsExtensions": true,
     "composite": false,
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

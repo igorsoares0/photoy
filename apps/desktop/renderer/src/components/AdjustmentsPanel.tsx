@@ -146,6 +146,9 @@ export function AdjustmentsPanel(): React.JSX.Element {
   const setLayerBlend = useEditor((state) => state.setLayerBlend);
   const values = useEditor(currentAdjustments);
   const resetAdjustments = useEditor((state) => state.resetAdjustments);
+  const copyAdjustments = useEditor((state) => state.copyAdjustments);
+  const pasteAdjustments = useEditor((state) => state.pasteAdjustments);
+  const copied = useEditor((state) => state.copiedAdjustments);
   // Curves are the one adjustment that is not a number, so "anything moved" is
   // asked of the sliders and of the four curves separately rather than of every
   // value in the object - which an object would answer yes to unconditionally.
@@ -261,22 +264,53 @@ export function AdjustmentsPanel(): React.JSX.Element {
             )}
           </div>
           )}
-          <button
-            type="button"
-            onClick={() => void resetAdjustments()}
-            disabled={!touched}
-            className="photoy-panel-reset"
-            style={{
-              height: 30,
-              fontSize: 'var(--text-chip)',
-              color: 'var(--fg-muted)',
-              borderTop: '1px solid var(--border-hairline)',
-              opacity: touched ? 1 : 0.32,
-              transition: 'var(--transition-control)',
-            }}
-          >
-            Zerar ajustes
-          </button>
+          {/* Copying a look onto the next photograph is the gesture a folder is
+              edited with, so it sits where the hand already is rather than in a
+              menu: the same row as the reset, at the foot of the panel. */}
+          <div className="flex" style={{ borderTop: '1px solid var(--border-hairline)' }}>
+            <button
+              type="button"
+              onClick={copyAdjustments}
+              title="Copiar ajustes (Ctrl+Shift+C)"
+              className="photoy-panel-reset flex-1"
+              style={{ height: 30, fontSize: 'var(--text-chip)', color: 'var(--fg-muted)' }}
+            >
+              Copiar
+            </button>
+            <span style={{ width: 1, background: 'var(--border-hairline)' }} />
+            <button
+              type="button"
+              onClick={() => void pasteAdjustments()}
+              disabled={copied === null}
+              title="Colar ajustes (Ctrl+Shift+V)"
+              className="photoy-panel-reset flex-1"
+              style={{
+                height: 30,
+                fontSize: 'var(--text-chip)',
+                color: 'var(--fg-muted)',
+                opacity: copied === null ? 0.32 : 1,
+                transition: 'var(--transition-control)',
+              }}
+            >
+              Colar
+            </button>
+            <span style={{ width: 1, background: 'var(--border-hairline)' }} />
+            <button
+              type="button"
+              onClick={() => void resetAdjustments()}
+              disabled={!touched}
+              className="photoy-panel-reset flex-1"
+              style={{
+                height: 30,
+                fontSize: 'var(--text-chip)',
+                color: 'var(--fg-muted)',
+                opacity: touched ? 1 : 0.32,
+                transition: 'var(--transition-control)',
+              }}
+            >
+              Zerar
+            </button>
+          </div>
         </>
       )}
     </aside>

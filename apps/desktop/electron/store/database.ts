@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS recent_files (
   opened_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS recent_files_opened ON recent_files (opened_at DESC);
+CREATE TABLE IF NOT EXISTS favourites (
+  path     TEXT PRIMARY KEY,
+  added_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recent_folders (
+  path      TEXT PRIMARY KEY,
+  opened_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS recent_folders_opened ON recent_folders (opened_at DESC);
 CREATE TABLE IF NOT EXISTS projects (
   source_path  TEXT PRIMARY KEY,
   project_path TEXT NOT NULL,
@@ -211,5 +220,70 @@ export class Database {
 
   forgetFile(filePath: string): void {
     this.#db.prepare('DELETE FROM recent_files WHERE path = ?').run(filePath);
+  }
+
+  /**
+   * Marks a photograph, or unmarks it.
+   *
+   * Keyed by path rather than by any identifier of our own, because there is no
+   * catalogue here: the folder on disk is the truth, and a favourite is a note
+   * about a file that exists in it. Moving the file loses the mark, which is
+   * the honest outcome for a program that never claimed to own the file.
+   */
+  setFavourite(filePath: string, favourite: boolean): void {
+    if (favourite) {
+      this.#db
+        .prepare(
+          `INSERT INTO favourites (path, added_at) VALUES (?, ?)
+           ON CONFLICT(path) DO NOTHING`,
+        )
+        .run(filePath, Date.now());
+    } else {
+      this.#db.prepare('DELETE FROM favourites WHERE path = ?').run(filePath);
+    }
+  }
+
+  /** Every marked path, newest first. */
+  favourites(): string[] {
+    const rows = this.#db
+      .prepare('SELECT path FROM favourites ORDER BY added_at DESC')
+      .all() as Array<{ path: string }>;
+    return rows.map((row) => row.path);
+  }
+
+  /** Which of these paths are marked, as a set the caller can ask cheaply. */
+  favouritesAmong(paths: readonly string[]): string[] {
+    if (paths.length === 0) return [];
+    const slots = paths.map(() => '?').join(', ');
+    const rows = this.#db
+      .prepare(`SELECT path FROM favourites WHERE path IN (${slots})`)
+      .all(...paths) as Array<{ path: string }>;
+    return rows.map((row) => row.path);
+  }
+
+  rememberFolder(folderPath: string): void {
+    this.#db
+      .prepare(
+        `INSERT INTO recent_folders (path, opened_at) VALUES (?, ?)
+         ON CONFLICT(path) DO UPDATE SET opened_at = excluded.opened_at`,
+      )
+      .run(folderPath, Date.now());
+    this.#db
+      .prepare(
+        `DELETE FROM recent_folders WHERE path NOT IN
+           (SELECT path FROM recent_folders ORDER BY opened_at DESC LIMIT ?)`,
+      )
+      .run(RECENT_LIMIT);
+  }
+
+  recentFolders(): string[] {
+    const rows = this.#db
+      .prepare('SELECT path FROM recent_folders ORDER BY opened_at DESC')
+      .all() as Array<{ path: string }>;
+    return rows.map((row) => row.path);
+  }
+
+  forgetFolder(folderPath: string): void {
+    this.#db.prepare('DELETE FROM recent_folders WHERE path = ?').run(folderPath);
   }
 }

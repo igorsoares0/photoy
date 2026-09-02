@@ -110,6 +110,29 @@ DecodedImage DecodeHeif(const std::vector<std::uint8_t>& bytes);
  */
 bool IsRaw(const std::vector<std::uint8_t>& bytes) noexcept;
 
+/**
+ * The preview a camera wrote into its own raw file.
+ *
+ * Every camera stores one, because its own screen has to show something without
+ * demosaicing the frame. Reading it is the difference between a folder of raw
+ * files browsing at the speed of a folder of JPEGs and browsing at more than a
+ * second each - so this is what a thumbnail asks for first, and a full decode
+ * is the fallback when the answer is empty or too small.
+ *
+ * Returns an empty vector when there is no usable preview. Anything else
+ * throws, because a file that cannot be opened at all is a different problem.
+ */
+struct RawPreviewInfo {
+  /// The rotation the preview still owes, which the demosaiced frame does not.
+  Orientation orientation = Orientation::kTopLeft;
+  /// Size of the photograph itself, upright - not of the preview.
+  int width = 0;
+  int height = 0;
+};
+
+std::vector<std::uint8_t> RawPreview(const std::vector<std::uint8_t>& bytes,
+                                     RawPreviewInfo* out_info);
+
 /// Sniffs the format and dispatches. Throws EngineException on failure.
 /// `settings` reaches the raw decoder and is ignored by every other one.
 DecodedImage Decode(const std::vector<std::uint8_t>& bytes, ImageFormat* out_format,

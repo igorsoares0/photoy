@@ -14,6 +14,7 @@
 #include "edit/render.h"
 #include "image/resample.h"
 #include "edit/serialize.h"
+#include "engine/thumbnail.h"
 #include "ai/denoiser.h"
 #include "ai/inpainter.h"
 #include "ai/compute.h"
@@ -204,6 +205,16 @@ std::uint64_t Open(std::uint64_t file_size) {
   return std::max<std::uint64_t>(256ull * 1024 * 1024, file_size * 24);
 }
 
+/**
+ * A thumbnail holds the decoded frame and a reduction of it.
+ *
+ * Sized from the file like an open is, because that is the same work: what a
+ * thumbnail saves is the residency afterwards, not the decode itself. The one
+ * case it overstates is a raw file with an embedded preview, which never
+ * decodes the sensor data at all - and overstating is the safe direction.
+ */
+std::uint64_t Thumbnail(std::uint64_t file_size) { return Open(file_size); }
+
 /// A preview holds the geometry result, an intermediate, and the output.
 std::uint64_t Preview(std::uint64_t width, std::uint64_t height) {
   return Pixels(width, height) * (2 * kWorkingBytesPerPixel + kOutputBytesPerPixel);
@@ -278,6 +289,7 @@ void Engine::Dispatch(const nlohmann::json& header,
   const bool known = method == "ai.inpaint" || method == "ai.denoise" ||
                      method == "background.load" ||
                      method == "image.analyse" || method == "image.open" ||
+                     method == "image.thumbnail" ||
                      method == "image.renderPreview" ||
                      method == "image.export" || method == "project.open" ||
                      method == "project.save" || method == "ai.segment" ||
@@ -297,6 +309,8 @@ void Engine::Dispatch(const nlohmann::json& header,
                      EmitJobState(id, "running");
                      if (method == "image.open") {
                        response = OpenImage(id, params);
+                     } else if (method == "image.thumbnail") {
+                       response = ThumbnailJob(id, params, token);
                      } else if (method == "project.open") {
                        response = OpenProject(id, params);
                      } else if (method == "project.save") {
@@ -351,6 +365,9 @@ std::uint64_t Engine::EstimateMemory(const std::string& method, const nlohmann::
   try {
     if (method == "image.open" || method == "project.open") {
       return estimate::Open(paths::FileSize(RequireString(params, "path")));
+    }
+    if (method == "image.thumbnail") {
+      return estimate::Thumbnail(paths::FileSize(RequireString(params, "path")));
     }
     const std::shared_ptr<Document> document = documents_.Get(RequireString(params, "documentId"));
     if (method == "ai.segment" || method == "ai.inpaint" || method == "ai.denoise" ||
@@ -555,6 +572,21 @@ nlohmann::json Engine::CancelJob(const json& params) {
 protocol::Frame Engine::OpenImage(std::int64_t id, const json& params) {
   const std::shared_ptr<Document> document = documents_.Open(RequireString(params, "path"));
   return MakeSuccess(id, DescribeDocument(*document));
+}
+
+protocol::Frame Engine::ThumbnailJob(std::int64_t id, const json& params,
+                                     const CancellationTokenPtr& token) {
+  const photoy::Thumbnail thumbnail =
+      MakeThumbnail(RequireString(params, "path"), OptionalInt(params, "maxSide", 256), token);
+  return MakeSuccess(id,
+                     json{{"width", thumbnail.width},
+                          {"height", thumbnail.height},
+                          {"sourceWidth", thumbnail.source_width},
+                          {"sourceHeight", thumbnail.source_height},
+                          {"format", FormatName(thumbnail.format)},
+                          {"embedded", thumbnail.embedded},
+                          {"byteLength", thumbnail.jpeg.size()}},
+                     thumbnail.jpeg);
 }
 
 protocol::Frame Engine::OpenProject(std::int64_t id, const json& params) {

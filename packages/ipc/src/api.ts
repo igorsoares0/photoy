@@ -1,4 +1,9 @@
 import type {
+  BatchProgress,
+  BatchRequest,
+  BatchResult,
+  LibraryFolder,
+  ThumbnailResult,
   FaceDetection,
   ImageAnalysis,
   Preset,
@@ -246,4 +251,32 @@ export interface PhotoyApi {
 
   onEngineStateChanged(listener: (state: EngineState) => void): () => void;
   onOpenRequested(listener: (path: string) => void): () => void;
+
+  /** Opens the folder picker, then lists it. Null when dismissed. */
+  chooseFolder(): Promise<ApiResult<LibraryFolder | null>>;
+  /** Lists a folder that is already known, such as one from the recent list. */
+  openFolder(path: string): Promise<ApiResult<LibraryFolder>>;
+  recentFolders(): Promise<ApiResult<string[]>>;
+  /**
+   * A thumbnail, from the disk cache when there is one and from the engine
+   * otherwise. The bytes are JPEG, for an object URL.
+   */
+  thumbnail(path: string, maxSide: number): Promise<ApiResult<ThumbnailResult>>;
+  /** Marks or unmarks a photograph, and answers with every marked path. */
+  setFavourite(path: string, favourite: boolean): Promise<ApiResult<string[]>>;
+  listFavourites(): Promise<ApiResult<string[]>>;
+
+  /** Asks for the folder a batch should write into. */
+  chooseBatchDirectory(): Promise<ApiResult<string | null>>;
+  /**
+   * Applies one look to many photographs and writes them out.
+   *
+   * Runs behind the open document rather than through it: each file is opened,
+   * exported and closed on its own, so a batch can run while something else is
+   * being edited and cannot disturb its edit stack.
+   */
+  runBatch(request: BatchRequest): Promise<ApiResult<BatchResult>>;
+  /** Stops after the file being worked on. Everything already written stays. */
+  cancelBatch(): Promise<ApiResult<void>>;
+  onBatchProgress(listener: (progress: BatchProgress) => void): () => void;
 }

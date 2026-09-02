@@ -202,6 +202,9 @@ hoje:
 - **A estimativa de abertura é um chute com piso**, porque o tamanho real só se conhece
   depois de ler o cabeçalho. Erra para cima de propósito: um job que superestima espera um
   pouco mais pela vez dele, um que subestima é admitido junto de outro e falta memória.
+- **O histórico de projetos não tem tela.** O banco sabe qual projeto veio de qual
+  fotografia e a lista de recentes já usa isso para não oferecer a foto crua no
+  lugar do trabalho salvo, mas não existe onde ver essa relação.
 - **A tabela de tons é amostrada em luz linear**, então as sombras profundas têm poucas
   entradas: os primeiros níveis de saída dividem um punhado delas. Uma curva de inclinação
   normal não percebe — abaixo de 0,7 nível de erro — mas uma que sobe nove vezes no primeiro
@@ -220,6 +223,106 @@ existir.
 o estado inteiro dos controles, e não um delta — é isso que a torna replayável —
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
+
+### Biblioteca, e o lote que ela existe para permitir
+
+A §34 pede organização simples — favoritos, recentes, busca por nome,
+miniaturas, copiar e colar ajustes — e proíbe explicitamente um catálogo
+fotográfico completo. O que entrou é exatamente isso: **a pasta no disco é a
+verdade**, nada é importado, nada é indexado, e a única coisa que o programa
+guarda de si é quais caminhos foram marcados e quais pastas foram visitadas.
+
+**As miniaturas são um método do engine, não um documento.** `image.thumbnail`
+lê o arquivo, reduz, converte e devolve JPEG — sem criar documento, porque uma
+pasta de quinhentas fotos não pode virar quinhentas fotos residentes. E a
+redução acontece **antes** da conversão de cor: converter um quadro de 24 MP
+para sRGB só para recortar 256 pixels dele é quase todo o custo de abrir a foto.
+
+**Para RAW, quem responde é a câmera.** Todo arquivo raw carrega o preview que a
+própria câmera mostra na tela de trás, e lê-lo é a diferença entre navegar uma
+pasta de raws na velocidade de uma pasta de JPEGs ou a mais de um segundo por
+arquivo. Medido nesta máquina, com o alvo em 256 pixels:
+
+| arquivo | tempo | caminho |
+|---|---|---|
+| PNG pequeno | 27 ms | decode |
+| JPEG 5,5 MP | 102 ms | decode |
+| NEF 13,8 MP | 117 ms | **preview da câmera** |
+| RAF 24 MP | 290 ms | **preview da câmera** |
+| DNG de iPhone 12 MP | 299 ms | **preview da câmera** |
+| CR3 17 MP | 314 ms | **preview da câmera** |
+| HEIC de iPhone 12 MP | 1170 ms | decode |
+
+O decode completo do NEF custa 1,3 s; o preview custa 117 ms. O HEIC continua
+caro porque o WIC decodifica o quadro HEVC inteiro — o codec tem um
+`GetThumbnail` que resolveria, e não foi feito porque o cache de disco paga esse
+preço uma vez por arquivo e a fila do engine paga em paralelo.
+
+**A orientação do preview foi medida, não deduzida — de novo.** O preview vem
+com o enquadramento do sensor, então em tese ainda deve o giro que a câmera
+gravou em `sizes.flip`. Mas o preview dentro de um DNG de iPhone carrega **a
+própria orientação EXIF**, que o nosso decodificador de JPEG já resolve; aplicar
+os dois deixava a foto deitada. A regra que ficou: quem declarou a própria
+orientação manda, e o flip da câmera só vale para um preview que não disse nada.
+Isso tem teste, e o teste falha com qualquer uma das duas metades sozinha.
+
+**O cache é de disco e são arquivos, não SQLite.** Uma miniatura são quinze
+quilobytes de JPEG; mil delas dentro de um banco é um banco que precisa de
+vacuum, de backup e de lock, enquanto como arquivos são exatamente aquilo em que
+o sistema operacional já é bom. A chave é `caminho + tamanho + mtime + lado`, o
+que faz uma foto editada por fora ser reminiaturizada sozinha em vez de aparecer
+como era. Orçamento de 256 MB, podado por último acesso — e apagar a pasta
+inteira não custa nada além de uma primeira rolagem lenta, que é o que a §38
+pede de um cache.
+
+**As miniaturas são pedidas quando o ladrilho entra em tela**, por
+`IntersectionObserver` com 400 px de margem, e no máximo seis por vez. Sem isso
+uma pasta de duas mil fotos decodifica duas mil arquivos para mostrar os vinte
+que cabem na tela — e pedir todas de uma vez tem o efeito perverso de fazer a
+milésima ser tão urgente quanto a primeira, com os ladrilhos visíveis chegando
+por último.
+
+**O lote é o motivo de tudo isso existir.** Para quem cobra por fotografia,
+"aplicar esta predefinição em duzentas fotos e exportar" não é conveniência, é o
+produto. Cada arquivo é aberto, ajustado, exportado e fechado sozinho: o custo de
+memória é de uma foto por vez, por mais longa que seja a lista, e o documento
+que alguém está editando não é tocado. Três decisões com teste atrás:
+
+- **Um lote nunca escreve por cima da própria origem.** Mesma pasta e mesmo
+  formato destruiria o original — a única coisa que um editor não destrutivo não
+  pode fazer — e faria isso duzentas vezes antes de alguém notar.
+- **Um arquivo com defeito não para o resto.** Um lote de duzentos que aborta no
+  único arquivo com cabeçalho quebrado não fez nada de útil; um que pula e
+  registra fez cento e noventa e nove coisas úteis.
+- **O limite de tamanho só reduz.** Ampliar para alcançar um número seria
+  inventar detalhe em toda foto que já era menor que ele.
+
+O laço do lote foi extraído para `ipc/batch.ts`, que não importa nada do
+Electron, e por isso o teste o roda **contra o engine de verdade**: arquivos
+reais abertos, ajustados, exportados e conferidos pixel a pixel — dois stops
+abaixo têm que aparecer nos três arquivos, ou os ajustes nunca saíram do objeto
+de requisição. Só os dois ganchos que pertencem ao Electron, o progresso e a
+validação de caminho, são substituídos. Isso obrigou `allowImportingTsExtensions`
+no tsconfig do desktop, o que é barato: nada ali é emitido pelo tsc de qualquer
+forma.
+
+**Copiar e colar ajustes é a outra metade do fluxo**, e mora no rodapé do painel
+em vez de num menu, porque é onde a mão já está. O que se copia é o estado
+inteiro — curvas incluídas — e ele vive só na sessão: um look copiado semana
+passada colado na foto de agora é uma surpresa, não uma conveniência.
+
+**Uma armadilha que este projeto já pagou três vezes.** Um seletor do zustand
+que filtra constrói um array novo a cada leitura, o store compara por
+identidade, e o renderer entra em laço até o React desistir. A lista filtrada
+por isso não é um seletor: é um hook que assina os três insumos separados — dois
+primitivos e uma referência que só muda quando a pasta muda — e filtra dentro de
+um memo.
+
+**O que ficou de fora, de propósito:** classificação por estrelas ou cor,
+palavras-chave, coleções, e qualquer coisa que precise importar arquivos para
+dentro de um banco. Tudo isso é o catálogo que a §42 proíbe na V1. O histórico
+de projetos que a §34 lista existe no banco (`projects`, com `projectFor`) e
+ainda não tem tela.
 
 ### Curvas
 

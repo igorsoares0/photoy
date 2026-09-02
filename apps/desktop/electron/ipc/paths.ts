@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
+import type { LibraryEntry, LibraryFolder } from '@photoy/types';
 
 /**
  * Extensions of the raw formats the engine decodes through LibRaw.
@@ -147,6 +148,32 @@ export function resolveProjectPath(candidate: unknown): string {
   return resolved;
 }
 
+/**
+ * Vets a folder arriving from the renderer, for browsing or as a batch target.
+ *
+ * The same rule as a file: absolute, real, and of the kind claimed. Nothing
+ * here restricts which folder - the person picked it in the operating system's
+ * own dialog, or opened it before - but a string that is not a folder must not
+ * reach a listing that would then walk it.
+ */
+export function resolveFolderPath(candidate: unknown): string {
+  if (typeof candidate !== 'string' || candidate.length === 0) {
+    throw new PathRejected('Invalid folder path', 'path must be a non-empty string');
+  }
+  const resolved = path.resolve(candidate);
+
+  let stats;
+  try {
+    stats = statSync(resolved);
+  } catch {
+    throw new PathRejected('Folder not found', resolved);
+  }
+  if (!stats.isDirectory()) {
+    throw new PathRejected('Not a folder', resolved);
+  }
+  return resolved;
+}
+
 /** Vets an export destination. The file need not exist yet. */
 export function resolveWritablePath(candidate: unknown): string {
   if (typeof candidate !== 'string' || candidate.length === 0) {
@@ -167,4 +194,68 @@ export function resolveWritablePath(candidate: unknown): string {
     throw new PathRejected('Destination folder does not exist', path.dirname(resolved));
   }
   return resolved;
+}
+
+/**
+ * Most photographs a folder listing will report.
+ *
+ * Not a limit on what the folder may hold - it is a limit on what is put in
+ * front of a person at once, and on what the renderer has to keep. Past this
+ * the honest answer is that the V1's organisation is not a catalogue, which is
+ * exactly what the spec says it must not become.
+ */
+export const FOLDER_LIMIT = 2000;
+
+/**
+ * The readable photographs in a folder, newest first.
+ *
+ * One level deep, deliberately. Walking into subfolders is what a catalogue
+ * does; a folder here is a folder, and the one the person is looking at.
+ */
+export function listFolder(folderPath: string, favourites: ReadonlySet<string>): LibraryFolder {
+  let names: string[];
+  try {
+    names = readdirSync(folderPath);
+  } catch {
+    throw new PathRejected('Folder could not be read', folderPath);
+  }
+
+  const entries: LibraryEntry[] = [];
+  let skipped = 0;
+  for (const name of names) {
+    const full = path.join(folderPath, name);
+    if (!hasReadableExtension(name)) {
+      // Counted, not listed. A folder that quietly shows eleven of its forty
+      // files reads as a folder that lost the rest.
+      skipped += 1;
+      continue;
+    }
+    let stat;
+    try {
+      stat = statSync(full);
+    } catch {
+      // Deleted between the listing and the stat, which is a race nobody can
+      // win; leaving it out is the same answer a moment later would give.
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    entries.push({
+      path: full,
+      name,
+      size: stat.size,
+      modified: stat.mtimeMs,
+      favourite: favourites.has(full),
+    });
+  }
+
+  // Newest first: the folder someone opens is almost always the one they just
+  // filled, and the photograph they want is almost always the last one in it.
+  entries.sort((a, b) => b.modified - a.modified);
+  return { path: folderPath, entries: entries.slice(0, FOLDER_LIMIT), skipped };
+}
+
+/** Where one photograph of a batch is written, given the target folder. */
+export function batchTarget(sourcePath: string, directory: string, format: string): string {
+  const extension = format === 'jpeg' ? 'jpg' : format === 'tiff' ? 'tif' : format;
+  return path.join(directory, `${path.basename(sourcePath, path.extname(sourcePath))}.${extension}`);
 }

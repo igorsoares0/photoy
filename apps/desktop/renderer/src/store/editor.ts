@@ -250,6 +250,17 @@ interface EditorState {
   commitAdjustments(next: Adjustments, continuing: boolean): Promise<void>;
 
   /**
+   * The adjustments held for pasting onto another photograph, or null.
+   *
+   * Kept in memory rather than in the database: a copy is a gesture inside one
+   * sitting, and one that outlived the session would paste a look somebody set
+   * up last week onto the photograph they have open now.
+   */
+  copiedAdjustments: Adjustments | null;
+  copyAdjustments(): void;
+  pasteAdjustments(): Promise<void>;
+
+  /**
    * Replaces one of the four curves. `continuing` works as it does for a
    * slider, so dragging a point is one undo step rather than one per frame.
    */
@@ -1245,6 +1256,16 @@ export const useEditor = create<EditorState>((set, get) => ({
   deletePreset: async (id) => {
     const removed = await window.photoy.deletePreset(id);
     if (removed.ok) set({ presets: removed.value });
+  },
+
+  copiedAdjustments: null,
+
+  copyAdjustments: () => set({ copiedAdjustments: currentAdjustments(get()) }),
+
+  pasteAdjustments: async () => {
+    const copied = get().copiedAdjustments;
+    if (copied === null) return;
+    await get().commitAdjustments(copied, false);
   },
 
   setCurve: async (channel, points, continuing) => {

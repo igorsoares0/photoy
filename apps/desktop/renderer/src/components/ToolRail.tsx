@@ -7,7 +7,13 @@ import { IconButton } from './IconButton';
  * Rotating and flipping are actions - they happen and they are done. Cropping is
  * a mode, and it is the only thing here that carries a selected state.
  */
-export function ToolRail(): React.JSX.Element {
+export function ToolRail({
+  browsing,
+  onBrowse,
+}: {
+  browsing: boolean;
+  onBrowse(): void;
+}): React.JSX.Element {
   const document = useEditor((state) => state.document);
   const applyEdit = useEditor((state) => state.applyEdit);
   const cropping = useEditor((state) => state.cropRect !== null);
@@ -36,6 +42,16 @@ export function ToolRail(): React.JSX.Element {
         borderRight: '1px solid var(--border-hairline)',
       }}
     >
+      {/* The way back to the folder, and the only control here that works with
+          nothing open - because with nothing open it is the only one that can. */}
+      <IconButton
+        icon="grid"
+        title="Biblioteca (Ctrl+G)"
+        size={36}
+        selected={browsing}
+        onClick={onBrowse}
+      />
+      <span style={{ width: 22, height: 1, background: 'var(--border-hairline)', margin: '5px 0' }} />
       <IconButton
         icon="compare"
         title="Comparar com o original (segure, ou \\)"

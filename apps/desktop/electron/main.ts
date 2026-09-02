@@ -4,6 +4,7 @@ import { Channels, Events } from '@photoy/ipc';
 import { EngineClient } from './engine/engine-client.js';
 import { locateEngine } from './engine/locate.js';
 import { Database } from './store/database';
+import { ThumbnailCache } from './store/thumbnail-cache.js';
 import { registerIpcHandlers, type IpcSurface } from './ipc/handlers.js';
 import { Recovery, Session } from './ipc/session.js';
 import { resolveReadablePath, hasReadableExtension } from './ipc/paths.js';
@@ -158,7 +159,11 @@ if (!app.requestSingleInstanceLock()) {
     const offer = recovery.offer();
 
     database = new Database(app.getPath('userData'));
-    ipc = registerIpcHandlers(engine, openSession, recovery, database);
+    // Pruned once at startup rather than on a timer: the only thing that grows
+    // it is browsing, and the only moment it matters is before browsing starts.
+    const thumbnails = new ThumbnailCache(app.getPath('userData'));
+    thumbnails.prune();
+    ipc = registerIpcHandlers(engine, openSession, recovery, database, thumbnails);
 
     const worker = engine;
     autosaveTimer = setInterval(() => void autosave(worker), autosaveIntervalMs());

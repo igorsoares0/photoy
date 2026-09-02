@@ -14,6 +14,11 @@ import {
   type StoredMask,
 } from '@photoy/ipc';
 import type {
+  BatchProgress,
+  BatchRequest,
+  BatchResult,
+  LibraryFolder,
+  ThumbnailResult,
   FaceDetection,
   ImageAnalysis,
   Preset,
@@ -140,6 +145,42 @@ const api: PhotoyApi = {
     const forward = (_event: unknown, filePath: string) => listener(filePath);
     ipcRenderer.on(Events.openRequested, forward);
     return () => ipcRenderer.off(Events.openRequested, forward);
+  },
+
+  chooseFolder: () =>
+    ipcRenderer.invoke(Channels.libraryChooseFolder) as Promise<ApiResult<LibraryFolder | null>>,
+
+  openFolder: (folderPath: string) =>
+    ipcRenderer.invoke(Channels.libraryOpenFolder, folderPath) as Promise<ApiResult<LibraryFolder>>,
+
+  recentFolders: () =>
+    ipcRenderer.invoke(Channels.libraryRecentFolders) as Promise<ApiResult<string[]>>,
+
+  thumbnail: (filePath: string, maxSide: number) =>
+    ipcRenderer.invoke(Channels.libraryThumbnail, filePath, maxSide) as Promise<
+      ApiResult<ThumbnailResult>
+    >,
+
+  setFavourite: (filePath: string, favourite: boolean) =>
+    ipcRenderer.invoke(Channels.libraryFavourite, filePath, favourite) as Promise<
+      ApiResult<string[]>
+    >,
+
+  listFavourites: () =>
+    ipcRenderer.invoke(Channels.libraryFavourites) as Promise<ApiResult<string[]>>,
+
+  chooseBatchDirectory: () =>
+    ipcRenderer.invoke(Channels.batchChooseDirectory) as Promise<ApiResult<string | null>>,
+
+  runBatch: (request: BatchRequest) =>
+    ipcRenderer.invoke(Channels.batchRun, request) as Promise<ApiResult<BatchResult>>,
+
+  cancelBatch: () => ipcRenderer.invoke(Channels.batchCancel) as Promise<ApiResult<void>>,
+
+  onBatchProgress: (listener: (progress: BatchProgress) => void) => {
+    const forward = (_event: unknown, progress: BatchProgress) => listener(progress);
+    ipcRenderer.on(Events.batchProgress, forward);
+    return () => ipcRenderer.off(Events.batchProgress, forward);
   },
 };
 

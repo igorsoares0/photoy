@@ -2,6 +2,7 @@ export * from './image.js';
 export * from './document.js';
 export * from './edit.js';
 export * from './preset.js';
+export * from './library.js';
 export * from './analysis.js';
 export * from './face.js';
 export * from './preview.js';

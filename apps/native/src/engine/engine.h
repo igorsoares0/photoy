@@ -69,6 +69,9 @@ class Engine {
 
   // Worker-thread handlers.
   protocol::Frame OpenImage(std::int64_t id, const nlohmann::json& params);
+  /// Reads a file off disk and answers with a browsing-sized JPEG of it.
+  protocol::Frame ThumbnailJob(std::int64_t id, const nlohmann::json& params,
+                               const CancellationTokenPtr& token);
   protocol::Frame OpenProject(std::int64_t id, const nlohmann::json& params);
   protocol::Frame SaveProjectJob(std::int64_t id, const nlohmann::json& params);
   protocol::Frame DetectFacesJob(std::int64_t id, const nlohmann::json& params,

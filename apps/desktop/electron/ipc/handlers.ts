@@ -11,16 +11,21 @@ import {
   type SegmentResult,
 } from '@photoy/ipc';
 import { Database } from '../store/database';
+import type { ThumbnailCache } from '../store/thumbnail-cache.js';
+import { createLibrary } from './library.js';
 import type {
+  BatchRequest,
   DocumentInfo,
   EditHistory,
   FaceDetection,
   ExportResult,
+  LibraryFolder,
   Operation,
   ImageAnalysis,
   Preset,
   PreviewInfo,
   PreviewRequest,
+  ThumbnailResult,
 } from '@photoy/types';
 import { existsSync } from 'node:fs';
 import { EngineCallError, type EngineClient } from '../engine/engine-client.js';
@@ -72,7 +77,9 @@ export function registerIpcHandlers(
   session: Session,
   recovery: Recovery,
   database: Database,
+  thumbnails: ThumbnailCache,
 ): IpcSurface {
+  const library = createLibrary(engine, database, thumbnails);
   const announce = () => {
     const window = BrowserWindow.getAllWindows()[0];
     window?.webContents.send(Events.projectChanged, session.state());
@@ -376,6 +383,49 @@ export function registerIpcHandlers(
     });
     return result;
   });
+
+  handle(Channels.libraryChooseFolder, async (): Promise<LibraryFolder | null> =>
+    library.chooseFolder(),
+  );
+  handle(Channels.libraryOpenFolder, async (folderPath: string) => library.openFolder(folderPath));
+  handle(Channels.libraryRecentFolders, async () => {
+    // Checked as they go out, the way the recent files are: a folder that has
+    // been moved or unplugged should stop being offered rather than fail when
+    // it is clicked.
+    const alive: string[] = [];
+    for (const candidate of library.recentFolders()) {
+      if (existsSync(candidate)) alive.push(candidate);
+      else database.forgetFolder(candidate);
+    }
+    return alive;
+  });
+
+  handle(
+    Channels.libraryThumbnail,
+    async (filePath: string, maxSide: number): Promise<ThumbnailResult> => {
+      const made = await library.thumbnail(filePath, maxSide);
+      return {
+        path: filePath,
+        width: made.width,
+        height: made.height,
+        cached: made.cached,
+        // Its own ArrayBuffer, not a view into the pool the pipe reads into.
+        bytes: made.bytes.buffer.slice(
+          made.bytes.byteOffset,
+          made.bytes.byteOffset + made.bytes.byteLength,
+        ) as ArrayBuffer,
+      };
+    },
+  );
+
+  handle(Channels.libraryFavourite, async (filePath: string, on: boolean) =>
+    library.favourite(filePath, on),
+  );
+  handle(Channels.libraryFavourites, async () => library.favourites());
+
+  handle(Channels.batchChooseDirectory, async () => library.chooseDirectory());
+  handle(Channels.batchRun, async (request: BatchRequest) => library.runBatch(request));
+  handle(Channels.batchCancel, async () => library.cancelBatch());
 
   handle(Channels.presetList, async () => database.listPresets());
 

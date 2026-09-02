@@ -1,4 +1,5 @@
 import { useEditor } from '../store/editor';
+import { useLibrary } from '../store/library';
 import { RecentFiles } from './RecentFiles';
 
 /**
@@ -8,6 +9,7 @@ import { RecentFiles } from './RecentFiles';
  */
 export function EmptyState({ dragging }: { dragging: boolean }): React.JSX.Element {
   const openDialog = useEditor((state) => state.openDialog);
+  const chooseFolder = useLibrary((state) => state.chooseFolder);
 
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-10">
@@ -33,6 +35,17 @@ export function EmptyState({ dragging }: { dragging: boolean }): React.JSX.Eleme
         >
           jpg · png · tiff · webp · raw · heic
         </span>
+      </button>
+
+      {/* A folder is what most people have before they have a photograph, so
+          the other door is offered beside this one rather than behind a menu. */}
+      <button
+        type="button"
+        onClick={() => void chooseFolder()}
+        className="photoy-mini"
+        style={{ width: 'auto', padding: '0 10px', height: 26 }}
+      >
+        ou abra uma pasta inteira
       </button>
 
       <div style={{ width: 'min(520px, 78%)' }}>
