@@ -37,11 +37,49 @@ Rect MapRectBack(const Rect& rect, Orientation orientation, int source_width,
   return {left, top, std::abs(x1 - x0) + 1, std::abs(y1 - y0) + 1};
 }
 
+/// Degrees to radians, and the two values every rotation here needs.
+struct Turn {
+  double sin = 0.0;
+  double cos = 1.0;
+};
+
+Turn TurnFor(double degrees) noexcept {
+  const double radians = degrees * 3.14159265358979323846 / 180.0;
+  return {std::sin(radians), std::cos(radians)};
+}
+
 }  // namespace
+
+Rect InscribedFrame(const Rect& region, double degrees) noexcept {
+  if (region.empty() || degrees == 0.0) return region;
+
+  const Turn turn = TurnFor(std::abs(degrees));
+  const double width = region.width;
+  const double height = region.height;
+  /*
+   * The largest same-shape rectangle that still fits.
+   *
+   * A frame of size (s*w, s*h) turned by the angle spans s*(w*cos + h*sin)
+   * across and s*(w*sin + h*cos) down, and both have to fit inside the region.
+   * Taking the smaller of the two ratios is the answer, and it is exact rather
+   * than a search.
+   */
+  const double across = width * turn.cos + height * turn.sin;
+  const double down = width * turn.sin + height * turn.cos;
+  const double scale = std::min(width / across, height / down);
+
+  const int kept_width = std::max(1, static_cast<int>(std::floor(width * scale)));
+  const int kept_height = std::max(1, static_cast<int>(std::floor(height * scale)));
+  // Centred on what it was cut from: a straighten levels the horizon, it does
+  // not reframe the photograph.
+  return {region.x + (region.width - kept_width) / 2, region.y + (region.height - kept_height) / 2,
+          kept_width, kept_height};
+}
 
 std::string Operation::KindName() const {
   switch (kind) {
     case OperationKind::kRotate: return "rotate";
+    case OperationKind::kStraighten: return "straighten";
     case OperationKind::kFlipHorizontal: return "flipHorizontal";
     case OperationKind::kFlipVertical: return "flipVertical";
     case OperationKind::kCrop: return "crop";
@@ -82,6 +120,7 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
                       int source_height) {
   Geometry geometry;
   geometry.source_rect = {0, 0, source_width, source_height};
+  geometry.unrotated_rect = geometry.source_rect;
 
   for (const Operation& operation : operations) {
     switch (operation.kind) {
@@ -94,6 +133,15 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
           std::swap(geometry.target_width, geometry.target_height);
         }
         break;
+      case OperationKind::kStraighten: {
+        // Absolute, not incremental, and trimmed from the region as it was
+        // before any straightening: dragging from five degrees to ten must
+        // re-cut the frame once, not shrink the already-cut one again.
+        geometry.angle =
+            std::clamp(operation.angle, -kMaxStraightenDegrees, kMaxStraightenDegrees);
+        geometry.source_rect = InscribedFrame(geometry.unrotated_rect, geometry.angle);
+        break;
+      }
       case OperationKind::kFlipHorizontal:
         geometry.orientation = Compose(FlipHorizontal(), geometry.orientation);
         break;
@@ -139,12 +187,40 @@ Geometry FoldGeometry(const std::vector<Operation>& operations, int source_width
                               std::max(1, static_cast<int>(std::lround(operation.rect.width * scale_x))),
                               std::max(1, static_cast<int>(std::lround(operation.rect.height * scale_y)))};
 
-        const Rect in_source = MapRectBack(in_natural, geometry.orientation,
-                                           geometry.source_rect.width, geometry.source_rect.height);
-        const Rect shifted{in_source.x + geometry.source_rect.x,
-                           in_source.y + geometry.source_rect.y, in_source.width,
-                           in_source.height};
-        geometry.source_rect = Intersect(shifted, geometry.source_rect);
+        const Rect in_frame = MapRectBack(in_natural, geometry.orientation,
+                                          geometry.source_rect.width, geometry.source_rect.height);
+
+        if (geometry.angle == 0.0) {
+          const Rect shifted{in_frame.x + geometry.source_rect.x,
+                             in_frame.y + geometry.source_rect.y, in_frame.width,
+                             in_frame.height};
+          geometry.source_rect = Intersect(shifted, geometry.source_rect);
+        } else {
+          /*
+           * The frame is turned, so the crop is a smaller rectangle turned by
+           * the same angle - which this model can hold exactly, because a frame
+           * here is a centre, a size and an angle. Only the centre has to move,
+           * and it moves by the offset turned into the source's own axes.
+           *
+           * The result is always inside the frame it was cut from, which is
+           * inside the region that frame was inscribed in: a crop after a
+           * straighten can never reach outside the photograph.
+           */
+          const Turn turn = TurnFor(geometry.angle);
+          const double dx = in_frame.x + in_frame.width / 2.0 - geometry.source_rect.width / 2.0;
+          const double dy = in_frame.y + in_frame.height / 2.0 - geometry.source_rect.height / 2.0;
+          const double centre_x = geometry.source_rect.x + geometry.source_rect.width / 2.0 +
+                                  dx * turn.cos - dy * turn.sin;
+          const double centre_y = geometry.source_rect.y + geometry.source_rect.height / 2.0 +
+                                  dx * turn.sin + dy * turn.cos;
+          geometry.source_rect = {
+              static_cast<int>(std::lround(centre_x - in_frame.width / 2.0)),
+              static_cast<int>(std::lround(centre_y - in_frame.height / 2.0)), in_frame.width,
+              in_frame.height};
+        }
+        // A crop starts a new base: from here a change of angle trims from what
+        // was kept, not from the whole photograph.
+        geometry.unrotated_rect = geometry.source_rect;
 
         // A crop takes a smaller piece of the picture; it does not change how
         // big a pixel is. Holding the resample ratio is what keeps that true.

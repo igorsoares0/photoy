@@ -163,6 +163,7 @@ TImageBuffer<Out> Compose(const Image16& base, const std::vector<Layer>& layers,
 bool PreviewPlan::Matches(const PreviewPlan& other) const noexcept {
   return width == other.width && height == other.height &&
          geometry.orientation == other.geometry.orientation &&
+         geometry.angle == other.geometry.angle &&
          geometry.source_rect.x == other.geometry.source_rect.x &&
          geometry.source_rect.y == other.geometry.source_rect.y &&
          geometry.source_rect.width == other.geometry.source_rect.width &&
@@ -196,10 +197,15 @@ Image16 RenderGeometry(const Image16& source, const PreviewPlan& plan,
 
   const bool needs_resize = resample_width != plan.geometry.source_rect.width ||
                             resample_height != plan.geometry.source_rect.height;
+  // A straightened frame is turned about its own centre, so the crop and the
+  // resample are the same pass: there is no axis-aligned region to copy out.
   Image16 region =
-      needs_resize ? ResampleTo(source, plan.geometry.source_rect, resample_width,
-                                resample_height, token)
-                   : CopyRegion(source, plan.geometry.source_rect, token);
+      plan.geometry.angle != 0.0
+          ? StraightenTo(source, plan.geometry.source_rect, plan.geometry.angle, resample_width,
+                         resample_height, token)
+          : (needs_resize ? ResampleTo(source, plan.geometry.source_rect, resample_width,
+                                       resample_height, token)
+                          : CopyRegion(source, plan.geometry.source_rect, token));
 
   // Most documents are upright. Calling ApplyOrientation anyway would clone a
   // full working buffer to produce the pixels we already have.
@@ -234,11 +240,20 @@ Image16 RenderFull(const Image16& source, const std::vector<Operation>& operatio
   const bool needs_resize = resample_width != geometry.source_rect.width ||
                             resample_height != geometry.source_rect.height;
 
-  const bool untouched = !needs_resize && geometry.orientation == Orientation::kTopLeft &&
+  const bool untouched = !needs_resize && geometry.angle == 0.0 &&
+                         geometry.orientation == Orientation::kTopLeft &&
                          geometry.source_rect.x == 0 && geometry.source_rect.y == 0 &&
                          geometry.source_rect.width == source.width() &&
                          geometry.source_rect.height == source.height();
   if (untouched) return source.Clone();
+
+  if (geometry.angle != 0.0) {
+    Image16 turned = StraightenTo(source, geometry.source_rect, geometry.angle, resample_width,
+                                  resample_height, token);
+    return geometry.orientation == Orientation::kTopLeft
+               ? turned
+               : ApplyOrientation(turned, geometry.orientation, token);
+  }
 
   Image16 region = needs_resize ? ResampleTo(source, geometry.source_rect, resample_width,
                                              resample_height, token)

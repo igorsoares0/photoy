@@ -143,6 +143,15 @@ export function generateFixtures() {
   // these pixels is the tone response itself rather than the tone response
   // mixed with a gamut conversion.
   writePng('ramp.png', 256, 8, (x) => [x, x, x, 255]);
+  // A white square with one small black mark, forty pixels right of centre and
+  // level with it. Levelling turns the frame, and where that mark lands says
+  // both which way it turned and by how much - with the mark far enough from
+  // the edges that the trimmed frame never clips it.
+  writePng('tilt.png', 200, 200, (x, y) =>
+    Math.abs(x - 140) <= 10 && Math.abs(y - 100) <= 10
+      ? [0, 0, 0, 255]
+      : [255, 255, 255, 255],
+  );
   // Opaque on the left, fully transparent on the right, to catch colour
   // bleeding across the alpha edge during a downscale.
   writePng('alpha.png', 100, 60, (x) => [255, 80, 0, x < 50 ? 255 : 0]);

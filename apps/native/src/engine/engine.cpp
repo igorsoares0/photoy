@@ -475,7 +475,8 @@ nlohmann::json Engine::Describe() const {
               // processor; see ai/compute.h for the measurements that say why.
               {"compute", DescribeCompute()},
               {"operations",
-               json::array({"rotate", "flipHorizontal", "flipVertical", "crop", "resize", "adjust",
+               json::array({"rotate", "straighten", "flipHorizontal", "flipVertical", "crop",
+                            "resize", "adjust",
                             "addLayer", "removeLayer", "reorderLayer", "setLayerVisible",
                             "setLayerOpacity", "setLayerBlend", "setLayerMask",
                             "setLayerFill", "setLayerDecontaminate", "setLayerPatch",

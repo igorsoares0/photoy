@@ -8,6 +8,7 @@
 
 export type OperationKind =
   | 'rotate'
+  | 'straighten'
   | 'flipHorizontal'
   | 'flipVertical'
   | 'crop'
@@ -296,6 +297,23 @@ export interface FlipOperation {
   kind: 'flipHorizontal' | 'flipVertical';
 }
 
+/**
+ * Levelling a horizon: degrees clockwise, the whole state rather than a delta.
+ *
+ * The frame is turned about its own centre and trimmed to the largest rectangle
+ * of the same shape that still fits inside the picture, so a straightened
+ * photograph never has a corner of nothing in it. What it costs is the border
+ * it gives up, which is the trade every editor makes here.
+ */
+export interface StraightenOperation {
+  kind: 'straighten';
+  /** -45 to 45. Past a quarter turn the answer is the rotate buttons. */
+  angle: number;
+}
+
+/** Largest angle a straighten may ask for, matching the engine's own limit. */
+export const MAX_STRAIGHTEN_DEGREES = 45;
+
 export interface CropOperation {
   kind: 'crop';
   /** The kept region, in the coordinates the preceding operations produce. */
@@ -399,6 +417,7 @@ export type Operation =
   | FlipOperation
   | CropOperation
   | AdjustOperation
+  | StraightenOperation
   | AddLayerOperation
   | SetLayerFillOperation
   | SetLayerDecontaminateOperation

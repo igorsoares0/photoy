@@ -100,6 +100,8 @@ export function describeHistory(entries: HistoryEntry[]): HistoryRow[] {
         const degrees = quarters === 3 ? -90 : quarters * 90;
         return { id, label: 'Girar', detail: `${formatSigned(degrees)}°` };
       }
+      case 'straighten':
+        return { id, label: 'Nivelar', detail: `${formatSigned(entry.angle, 1)}°` };
       case 'flipHorizontal':
         return { id, label: 'Espelhar', detail: 'horizontal' };
       case 'flipVertical':

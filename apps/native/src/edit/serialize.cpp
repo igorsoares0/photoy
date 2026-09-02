@@ -152,6 +152,9 @@ json ToJson(const Operation& operation) {
     case OperationKind::kRotate:
       entry["quarters"] = operation.quarters;
       break;
+    case OperationKind::kStraighten:
+      entry["angle"] = operation.angle;
+      break;
     case OperationKind::kCrop:
       entry["rect"] = json{{"x", operation.rect.x},
                            {"y", operation.rect.y},
@@ -245,6 +248,14 @@ Operation FromJson(const json& value) {
   }
   if (kind == "flipVertical") {
     operation.kind = OperationKind::kFlipVertical;
+    return operation;
+  }
+  if (kind == "straighten") {
+    operation.kind = OperationKind::kStraighten;
+    // Clamped rather than refused: a slider that cannot reach a value is a
+    // better answer than a request that fails halfway through a drag.
+    operation.angle = std::clamp(OptionalDouble(value, "angle", 0.0), -kMaxStraightenDegrees,
+                                 kMaxStraightenDegrees);
     return operation;
   }
   if (kind == "crop") {

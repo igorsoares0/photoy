@@ -2,6 +2,7 @@ import type { Curve, CurveChannel } from '@photoy/types';
 import { useRef, useState } from 'react';
 import { currentAdjustments, useEditor } from '../store/editor';
 import { addPoint, isIdentity, movePoint, nearestPoint, removePoint, sample } from '../lib/curves';
+import { channelPath } from '../lib/histogram';
 import { PanelSection } from './PanelSection';
 
 /**
@@ -53,6 +54,10 @@ function pathFor(curve: Curve): string {
 export function CurvePanel(): React.JSX.Element {
   const [channel, setChannel] = useState<CurveChannel>('rgb');
   const curves = useEditor(currentAdjustments).curves;
+  // The distribution of the picture, behind the grid. A curve is drawn against
+  // where the tones actually are: pulling the shadows up matters differently on
+  // a photograph that has nothing in them.
+  const histogram = useEditor((state) => state.histogram);
   const setCurve = useEditor((state) => state.setCurve);
   const square = useRef<SVGSVGElement>(null);
   // Which point the pointer is holding, and whether it has moved yet. Together
@@ -196,6 +201,14 @@ export function CurvePanel(): React.JSX.Element {
         onPointerCancel={onPointerUp}
         onDoubleClick={onDoubleClick}
       >
+        {histogram !== null && histogram.counted > 0 ? (
+          <path
+            d={channelPath(histogram.luma, histogram.peak)}
+            fill="var(--fg-numeric-idle)"
+            fillOpacity={0.35}
+          />
+        ) : null}
+
         {/* Quarters, which is where anyone reading a curve looks first. */}
         {[0.25, 0.5, 0.75].map((at) => (
           <g key={at} stroke="var(--border-hairline)" strokeWidth={0.004}>

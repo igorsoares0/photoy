@@ -329,6 +329,123 @@ Image16 ResampleTo(const Image16& source, const Rect& region, int target_width,
                    : DownscaleBox(source, region, target_width, target_height, token);
 }
 
+Image16 StraightenTo(const Image16& source, const Rect& frame, double degrees, int target_width,
+                     int target_height, const CancellationTokenPtr& token) {
+  if (target_width <= 0 || target_height <= 0 || frame.empty()) {
+    return Image16::Create(std::max(1, target_width), std::max(1, target_height));
+  }
+
+  const double radians = -degrees * 3.14159265358979323846 / 180.0;
+  // Negated because a positive angle turns the photograph clockwise, and the
+  // frame turns the other way to make that happen: the picture never moves, the
+  // window over it does.
+  const double turn_sin = std::sin(radians);
+  const double turn_cos = std::cos(radians);
+
+  /*
+   * A heavy reduction is done first, and axis-aligned.
+   *
+   * The box filter averages every source pixel under an output pixel; the
+   * bilinear tap the turn uses reads two per axis and ignores the rest. Turning
+   * a full frame straight down to preview size that way aliases every edge in
+   * it, so the reduction happens first and the turn runs at roughly one to one.
+   */
+  const double reduction = static_cast<double>(target_width) / frame.width;
+  const Rect bounds{0, 0, source.width(), source.height()};
+
+  Image16 reduced;
+  const Image16* input = &source;
+  double scale = reduction;
+  double origin_x = frame.x + frame.width / 2.0;
+  double origin_y = frame.y + frame.height / 2.0;
+
+  if (reduction < 0.9) {
+    // The axis-aligned box the turned frame reaches into, clipped to the
+    // photograph: sampling outside it is what a straighten must never need.
+    const double span_x = std::abs(frame.width * turn_cos) + std::abs(frame.height * turn_sin);
+    const double span_y = std::abs(frame.width * turn_sin) + std::abs(frame.height * turn_cos);
+    const Rect box = Intersect(
+        Rect{static_cast<int>(std::floor(origin_x - span_x / 2.0)),
+             static_cast<int>(std::floor(origin_y - span_y / 2.0)),
+             static_cast<int>(std::ceil(span_x)) + 2, static_cast<int>(std::ceil(span_y)) + 2},
+        bounds);
+    const int reduced_width = std::max(1, static_cast<int>(std::lround(box.width * reduction)));
+    const int reduced_height = std::max(1, static_cast<int>(std::lround(box.height * reduction)));
+    reduced = DownscaleBox(source, box, reduced_width, reduced_height, token);
+
+    // The centre moves into the reduced buffer's own coordinates, and from here
+    // the turn runs at one to one.
+    const double actual_x = static_cast<double>(reduced_width) / box.width;
+    const double actual_y = static_cast<double>(reduced_height) / box.height;
+    origin_x = (origin_x - box.x) * actual_x;
+    origin_y = (origin_y - box.y) * actual_y;
+    scale = (actual_x + actual_y) / 2.0;
+    input = &reduced;
+  }
+
+  Image16 result = Image16::Create(target_width, target_height);
+  const double half_width = target_width / 2.0;
+  const double half_height = target_height / 2.0;
+  const double inverse_scale = 1.0 / scale;
+  const int last_x = input->width() - 1;
+  const int last_y = input->height() - 1;
+
+  for (int y = 0; y < target_height; ++y) {
+    if (token->cancelled()) {
+      throw EngineException(error_code::kCancelled, "Render cancelled", "superseded");
+    }
+    std::uint16_t* out = result.Row(y);
+    const double frame_y = (y + 0.5 - half_height) * inverse_scale;
+    for (int x = 0; x < target_width; ++x) {
+      const double frame_x = (x + 0.5 - half_width) * inverse_scale;
+      // Clamped at the edge rather than left transparent: the frame is inside
+      // the photograph by construction, and a rounded pixel at the border must
+      // not become a dark fringe all the way round.
+      const double sx = std::clamp(origin_x + frame_x * turn_cos - frame_y * turn_sin - 0.5, 0.0,
+                                   static_cast<double>(last_x));
+      const double sy = std::clamp(origin_y + frame_x * turn_sin + frame_y * turn_cos - 0.5, 0.0,
+                                   static_cast<double>(last_y));
+
+      const int x0 = static_cast<int>(sx);
+      const int y0 = static_cast<int>(sy);
+      const int x1 = std::min(x0 + 1, last_x);
+      const int y1 = std::min(y0 + 1, last_y);
+      const double fx = sx - x0;
+      const double fy = sy - y0;
+
+      const std::uint16_t* top = input->Row(y0);
+      const std::uint16_t* bottom = input->Row(y1);
+      const std::size_t left = static_cast<std::size_t>(x0) * kChannels;
+      const std::size_t right = static_cast<std::size_t>(x1) * kChannels;
+
+      // Premultiplied, like every other resampler here, so a transparent
+      // neighbour cannot drag its colour into a visible edge.
+      const double alpha[4] = {top[left + 3] / kMaxSample, top[right + 3] / kMaxSample,
+                               bottom[left + 3] / kMaxSample, bottom[right + 3] / kMaxSample};
+      double sum[4] = {0.0, 0.0, 0.0, 0.0};
+      const double weights[4] = {(1.0 - fx) * (1.0 - fy), fx * (1.0 - fy), (1.0 - fx) * fy,
+                                 fx * fy};
+      const std::uint16_t* rows[4] = {top, top, bottom, bottom};
+      const std::size_t columns[4] = {left, right, left, right};
+      for (int corner = 0; corner < 4; ++corner) {
+        const double weight = weights[corner];
+        for (int c = 0; c < 3; ++c) sum[c] += rows[corner][columns[corner] + c] * alpha[corner] * weight;
+        sum[3] += rows[corner][columns[corner] + 3] * weight;
+      }
+
+      std::uint16_t* target = out + static_cast<std::size_t>(x) * kChannels;
+      if (sum[3] <= 0.0) {
+        std::memset(target, 0, kChannels * sizeof(std::uint16_t));
+        continue;
+      }
+      const double unpremultiply = kMaxSample / std::clamp(sum[3], 0.0, kMaxSample);
+      for (int c = 0; c < 3; ++c) target[c] = ClampToSample(sum[c] * unpremultiply);
+      target[3] = ClampToSample(sum[3]);
+    }
+  }
+  return result;
+}
+
 Image16 ResizeToFit(const Image16& source, int max_width, int max_height, double* out_scale) {
   const FitResult fit = FitInside(source.width(), source.height(), max_width, max_height);
   if (out_scale != nullptr) *out_scale = fit.scale;

@@ -224,6 +224,99 @@ o estado inteiro dos controles, e não um delta — é isso que a torna replayá
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
 
+### Nivelar, e por que o recorte não precisou de uma etapa nova
+
+Girar 90° já existia desde o M2; o que faltava era o giro por ângulo livre —
+horizonte torto, que é a correção mais comum que existe em fotografia. O
+problema não era girar pixels, era **onde o ângulo cabe no modelo**.
+
+A geometria da pilha se dobra em um retângulo, uma orientação e um redimensiona-
+mento, e o render lê cada pixel uma vez por causa disso. Um giro livre ameaça
+essa propriedade: um recorte feito depois de nivelar, mapeado de volta, não é um
+retângulo alinhado aos eixos. A saída foi mudar o que `source_rect` significa:
+**o retângulo é lido como um centro e um tamanho, girados em torno do próprio
+centro pelo ângulo**. Com ângulo zero as duas leituras são a mesma coisa — que é
+por que tudo que existia antes continua valendo, sem um único teste reescrito.
+
+E aí o recorte fecha sozinho: um recorte dentro de um quadro girado é um
+retângulo menor girado **pelo mesmo ângulo**, que é exatamente o que esse modelo
+sabe guardar. Só o centro precisa se mover, e ele se move pelo deslocamento
+girado para os eixos da origem. Melhor ainda, isso é seguro por construção: o
+quadro inscrito está dentro da região de onde foi cortado, e o recorte está
+dentro do quadro — então **um recorte depois de um nivelamento nunca alcança
+fora da fotografia**, e não há canto vazio para tratar.
+
+**O corte é aritmética, não busca.** Um quadro de tamanho (s·w, s·h) girado por
+θ ocupa s·(w·cos+h·sin) de largura e s·(w·sin+h·cos) de altura; o menor dos dois
+quocientes é a resposta exata. A forma é preservada — uma foto que mudasse de
+proporção ao ter o horizonte nivelado seria uma surpresa. Num quadro 200×120 a
+10°, sobra 82,5% de cada lado, e o teste cobra esse número.
+
+**O ângulo é absoluto, não incremental**, como os ajustes. E por isso a
+geometria guarda também a região *antes* de qualquer nivelamento: sem uma base
+de onde cortar, arrastar o ângulo de cinco para dez graus encolheria o quadro
+duas vezes em vez de recortá-lo uma. Arrastando o slider isso viraria uma foto
+que some sob a mão — tem teste, e ele falha quando a base é trocada pelo
+retângulo já cortado.
+
+**A redução vem antes do giro, e alinhada aos eixos.** A amostragem do giro é
+bilinear, que lê dois pixels por eixo e ignora o resto: girar um quadro de 24 MP
+direto para 1400 px assim serrilharia toda borda da foto. O filtro de caixa
+faz a média primeiro, e o giro roda perto de um para um, que é o tamanho em que
+bilinear é o filtro certo. O que isso custa, medido numa foto de 5,5 MP:
+
+| render | reto | nivelado |
+|---|---|---|
+| rascunho de arrasto (700 px) | 8 ms | 7 ms |
+| preview (1400 px) | 32 ms | 31 ms |
+| tamanho cheio | — | 121 ms |
+
+Nivelar é **de graça no preview**. O custo real está na redução, que já era paga.
+
+**O sentido do ângulo é decisão, não convenção herdada:** positivo gira a
+fotografia no sentido horário, igual ao botão de girar à direita. Isso tem um
+teste que fixa o sentido *e* a quantidade — uma marca a quarenta pixels à
+direita do centro tem que aparecer em (40·cos20°, 40·sin20°) depois de vinte
+graus — e ele falha se o sinal for trocado no C++.
+
+### Histograma
+
+Todo editor pago mostra um, e o engine já media o dele: `Analysis` calcula um
+histograma de 256 bins e nada desenhava. Só que a resposta certa não era ligar
+um fio até lá.
+
+**Quem conta é o renderer, com os pixels que já tem.** Isso não contradiz "o
+engine mede": o engine mediu esses pixels quando os produziu, e o que se conta
+aqui é o quadro que está na tela. Pedir ao engine seria um job, uma ida e volta e
+uma segunda cópia do quadro **por quadro de um arrasto**, para contar bytes que
+já estão na mão. A contagem acontece no último momento em que os bytes são
+legíveis — antes de virarem `ImageBitmap`, que é opaco ao JavaScript.
+
+**Um pixel a cada quatro, em cada eixo.** Um dezesseis avos do trabalho e, em
+qualquer fotografia real, um histograma indistinguível: a forma de uma
+distribuição não muda quando cem mil amostras viram seis mil. Isso roda em todo
+quadro de um slider arrastado, então o dezesseis avos importa.
+
+Três coisas que um contador ingênuo erraria, e que têm teste cada uma:
+
+- **O padding das linhas não é fotografia.** O engine alinha as linhas, e ler
+  `largura × 4` empilharia um pedaço do quadro no preto — um quadrado cinza
+  reportaria corte nas sombras.
+- **Área transparente não é fotografia.** Depois de remover o fundo, o recorte
+  inteiro cairia no bin zero e a foto apareceria como esmagada.
+- **O corte é por canal.** Um vermelho estourado num pôr do sol é detalhe
+  perdido mesmo onde os outros dois ainda têm folga; esperar os três concordarem
+  esconderia exatamente o caso que importa.
+
+**A altura é a raiz do contador, não o contador.** Uma foto de uma parede põe
+quase tudo em três bins, e contra uma escala linear todo o resto do quadro vira
+uma linha reta. A raiz é o que torna um histograma legível em fotos de verdade,
+e é o que todo editor que desenha um usa.
+
+O mesmo desenho aparece **atrás da grade das curvas**, porque uma curva é
+desenhada contra onde os tons realmente estão: puxar as sombras significa coisas
+diferentes numa foto que não tem nada nelas.
+
 ### Biblioteca, e o lote que ela existe para permitir
 
 A §34 pede organização simples — favoritos, recentes, busca por nome,

@@ -29,6 +29,7 @@ import {
 } from '../lib/enhance';
 import type { ApiResult, EngineState, OpenedProject, RecoveryOffer } from '@photoy/ipc';
 import { toBitmap } from '../lib/preview';
+import { measure, type Histogram } from '../lib/histogram';
 import { brushMaskSize } from '../lib/brush';
 import {
   AUTO_STRENGTHS,
@@ -114,6 +115,14 @@ interface EditorState {
   /** Width over height the crop is locked to, or null for a free rectangle. */
   cropAspect: number | null;
   preview: PreviewState | null;
+  /**
+   * The distribution of the frame on screen, counted as it arrives.
+   *
+   * Beside the preview rather than asked for: the pixels are already here, and
+   * a histogram that lagged the picture by a round trip would be a histogram of
+   * the previous slider position.
+   */
+  histogram: Histogram | null;
   viewport: Viewport;
   busy: Busy;
   error: EditorError | null;
@@ -188,7 +197,14 @@ interface EditorState {
   baseline: PreviewState | null;
   setComparing(on: boolean): Promise<void>;
 
-  applyEdit(operation: Operation): Promise<void>;
+  /**
+   * Puts an operation on the stack.
+   *
+   * `continuing` is what a dragged control passes for every frame after the
+   * first, so the whole gesture is one entry in the history rather than one per
+   * frame - the same bargain the adjustment sliders make.
+   */
+  applyEdit(operation: Operation, continuing?: boolean): Promise<void>;
 
   /** Reads the stack from the engine, so the panel knows it before any edit. */
   refreshHistory(): Promise<void>;
@@ -409,6 +425,7 @@ function adoptProject(set: SetState, get: GetState, opened: OpenedProject): void
     selectedLayerId: null,
     cropRect: null,
     preview: null,
+    histogram: null,
     viewport: { scale: 1, offsetX: 0, offsetY: 0, fitScale: 1 },
     lastExport: null,
     busy: null,
@@ -495,6 +512,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   cropRect: null,
   cropAspect: null,
   preview: null,
+  histogram: null,
   viewport: INITIAL_VIEWPORT,
   busy: null,
   error: null,
@@ -530,6 +548,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedLayerId: null,
       cropRect: null,
       preview: null,
+      histogram: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
     });
@@ -566,6 +585,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedLayerId: null,
       cropRect: null,
       preview: null,
+      histogram: null,
       viewport: INITIAL_VIEWPORT,
       busy: null,
     });
@@ -582,6 +602,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       pendingAdjustments: null,
       cropRect: null,
       preview: null,
+      histogram: null,
       lastExport: null,
     });
     await window.photoy.closeImage(current.id);
@@ -602,6 +623,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       baseline: true,
     });
     if (!response.ok) return;
+    // Counted before the bytes become a bitmap, which is the last moment they
+    // are readable: an ImageBitmap is opaque to JavaScript.
+    const counted = measure(
+      new Uint8Array(response.value.pixels),
+      response.value.width,
+      response.value.height,
+      response.value.stride,
+    );
     const bitmap = await toBitmap(response.value);
     // The document may have been closed, or the comparison let go, in the
     // meantime; a bitmap nobody will draw has to be released rather than kept.
@@ -644,6 +673,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       return;
     }
 
+    // Counted before the bytes become a bitmap, which is the last moment they
+    // are readable: an ImageBitmap is opaque to JavaScript.
+    const counted = measure(
+      new Uint8Array(response.value.pixels),
+      response.value.width,
+      response.value.height,
+      response.value.stride,
+    );
     const bitmap = await toBitmap(response.value);
     // The document may have been closed, or another render finished, while this
     // preview was in flight.
@@ -659,6 +696,7 @@ export const useEditor = create<EditorState>((set, get) => ({
         height: response.value.height,
         scale: response.value.scale,
       },
+      histogram: counted,
       busy: null,
     });
   },
@@ -695,10 +733,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ busy: null, lastExport: response.value });
   },
 
-  applyEdit: async (operation) => {
+  applyEdit: async (operation, continuing = false) => {
     const document = get().document;
     if (document === null) return;
-    await adoptHistory(set, get, await window.photoy.applyEdit(document.id, operation));
+    await adoptHistory(
+      set,
+      get,
+      await window.photoy.applyEdit(document.id, operation, continuing),
+      continuing,
+    );
   },
 
   setProjectState: ({ path, dirty }) => set({ projectPath: path, dirty }),

@@ -14,6 +14,7 @@ namespace photoy {
 
 enum class OperationKind {
   kRotate,
+  kStraighten,
   kFlipHorizontal,
   kFlipVertical,
   kCrop,
@@ -44,6 +45,15 @@ struct Operation {
 
   /// kRotate: clockwise quarter turns, normalised to 1-3.
   int quarters = 1;
+
+  /**
+   * kStraighten: degrees clockwise, the whole state rather than a delta.
+   *
+   * Small on purpose - past a quarter turn the answer is the rotate buttons,
+   * not a slider - and positive means the photograph turns clockwise, which is
+   * the direction the rotate-right button turns it.
+   */
+  double angle = 0.0;
 
   /// kCrop: the kept region, in the coordinates the preceding operations produce.
   Rect rect;
@@ -98,8 +108,31 @@ struct Operation {
  * the stack is.
  */
 struct Geometry {
-  /// Region of the original image that survives, in original coordinates.
+  /**
+   * The frame that survives, in original coordinates.
+   *
+   * Its position and size are read as a centre and a size, because with a
+   * straightening angle the frame is that rectangle turned about its own
+   * centre - not an axis-aligned box. At an angle of zero the two readings are
+   * the same thing, which is why everything that came before this still holds.
+   */
   Rect source_rect;
+  /**
+   * Degrees the frame is turned by, clockwise on the photograph.
+   *
+   * The frame always sits inside the region it was cut from, so a straightened
+   * photograph never has a corner of nothing in it: what a straighten costs is
+   * the border it gives up, and that is the trade every editor makes here.
+   */
+  double angle = 0.0;
+  /**
+   * The region a straighten trims from.
+   *
+   * Kept because the angle is absolute rather than incremental: without a base
+   * to trim from, dragging the angle from five degrees to ten would shrink the
+   * frame twice instead of re-cutting it once.
+   */
+  Rect unrotated_rect;
   /// Orientation to apply after the crop.
   Orientation orientation = Orientation::kTopLeft;
   /**
@@ -120,6 +153,20 @@ struct Geometry {
   int OutputWidth() const noexcept;
   int OutputHeight() const noexcept;
 };
+
+/**
+ * The largest frame of the same shape that fits inside a rectangle turned by
+ * `degrees`, centred on it.
+ *
+ * A straighten has to give something up - the corners of the turned frame reach
+ * outside the picture - and this is what it gives up. Same aspect ratio as the
+ * rectangle it came from, because a photograph that changed shape when its
+ * horizon was levelled would be a surprise.
+ */
+Rect InscribedFrame(const Rect& region, double degrees) noexcept;
+
+/// Largest side a straighten may ask for. Past this, the answer is a quarter turn.
+inline constexpr double kMaxStraightenDegrees = 45.0;
 
 /**
  * Folds the operations against an image of the given size.

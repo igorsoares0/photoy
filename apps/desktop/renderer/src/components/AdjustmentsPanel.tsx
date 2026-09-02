@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { CropPanel } from './CropPanel';
 import { CurvePanel } from './CurvePanel';
 import { HistoryPanel } from './HistoryPanel';
+import { Histogram } from './Histogram';
 import { LayersPanel } from './LayersPanel';
 import { TabBar } from './TabBar';
 import { MaskPanel } from './MaskPanel';
@@ -14,6 +15,7 @@ import { PatchPanel } from './PatchPanel';
 import { PresetsPanel } from './PresetsPanel';
 import { EnhancePanel } from './EnhancePanel';
 import { ResizePanel } from './ResizePanel';
+import { StraightenPanel } from './StraightenPanel';
 import { PanelSection } from './PanelSection';
 import { PortraitPanel } from './PortraitPanel';
 import { RawPanel } from './RawPanel';
@@ -196,7 +198,14 @@ export function AdjustmentsPanel(): React.JSX.Element {
             className="flex flex-1 flex-col overflow-y-auto"
             style={{ padding: 'var(--pad-panel)', gap: 'var(--gap-group)' }}
           >
+            {/* Above everything, and outside the editable check: the
+                distribution is a fact about the picture, not a control, and it
+                is worth reading even on a layer that takes no adjustments. */}
+            <Histogram />
             <ResizePanel />
+            {/* Beside the size, because both are questions about the frame
+                rather than about the colour of what is in it. */}
+            <StraightenPanel />
             <LayersPanel />
             <BrushPanel />
             {patchLayer !== null ? (

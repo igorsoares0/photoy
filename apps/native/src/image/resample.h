@@ -90,6 +90,25 @@ Image16 LanczosResize(const Image16& source, const Rect& region, int target_widt
 Image16 ResampleTo(const Image16& source, const Rect& region, int target_width,
                    int target_height, const CancellationTokenPtr& token);
 
+/**
+ * Samples a frame that is turned about its own centre, at a given output size.
+ *
+ * This is what a straighten is: the picture does not move, the frame does. Each
+ * output pixel is mapped back through the turn into the source and read
+ * bilinearly, so the whole thing is one pass with no intermediate the size of
+ * the photograph.
+ *
+ * A heavy reduction is done first and axis-aligned, because a bilinear tap
+ * reads two source pixels per axis and ignores the rest - turning a 24 megapixel
+ * frame straight into a 1200 pixel preview that way would alias every edge in
+ * it. The box filter averages first; the turn then runs at roughly one to one,
+ * which is the size bilinear is the right filter for.
+ *
+ * `degrees` is clockwise on the photograph, matching the rotate-right button.
+ */
+Image16 StraightenTo(const Image16& source, const Rect& frame, double degrees, int target_width,
+                     int target_height, const CancellationTokenPtr& token);
+
 /// Downscales to fit the box, or clones when the source already fits.
 Image16 ResizeToFit(const Image16& source, int max_width, int max_height, double* out_scale);
 
