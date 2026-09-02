@@ -1,8 +1,9 @@
-import type { AdjustmentKey, BlendMode } from '@photoy/types';
+import type { BlendMode, SliderKey } from '@photoy/types';
 import { NO_LAYERS, currentAdjustments, selectedLayer, useEditor } from '../store/editor';
 import { formatInteger, formatSigned } from '../lib/format';
 import { useState } from 'react';
 import { CropPanel } from './CropPanel';
+import { CurvePanel } from './CurvePanel';
 import { HistoryPanel } from './HistoryPanel';
 import { LayersPanel } from './LayersPanel';
 import { TabBar } from './TabBar';
@@ -19,7 +20,7 @@ import { RawPanel } from './RawPanel';
 import { Slider } from './Slider';
 
 interface Control {
-  key: AdjustmentKey;
+  key: SliderKey;
   label: string;
   min: number;
   max: number;
@@ -145,7 +146,12 @@ export function AdjustmentsPanel(): React.JSX.Element {
   const setLayerBlend = useEditor((state) => state.setLayerBlend);
   const values = useEditor(currentAdjustments);
   const resetAdjustments = useEditor((state) => state.resetAdjustments);
-  const touched = Object.values(values).some((value) => value !== 0);
+  // Curves are the one adjustment that is not a number, so "anything moved" is
+  // asked of the sliders and of the four curves separately rather than of every
+  // value in the object - which an object would answer yes to unconditionally.
+  const touched =
+    Object.values(values).some((value) => typeof value === 'number' && value !== 0) ||
+    Object.values(values.curves).some((curve) => curve.length > 0);
   const hasAdjustmentLayer = useEditor((state) =>
     (state.history?.layers ?? NO_LAYERS).some((entry) => entry.kind === 'adjustment'),
   );
@@ -240,6 +246,10 @@ export function AdjustmentsPanel(): React.JSX.Element {
                     everything below acts on what that produced. */}
                 <RawPanel />
                 <Group label="Luz" controls={LIGHT} />
+                {/* After the tone sliders because that is the order the engine
+                    applies them in: the sliders shape the tones and the curve
+                    is drawn on top of what they produced. */}
+                <CurvePanel />
                 <Group label="Cor" controls={COLOUR} />
                 <Group label="Detalhe" controls={DETAIL} />
                 <Group label="Efeitos" controls={EFFECTS} />

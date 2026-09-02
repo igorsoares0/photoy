@@ -25,6 +25,50 @@ constexpr int kMaxResize = 30000;
 using json_util::RequireInt;
 using json_util::RequireString;
 
+json CurveToJson(const Curve& curve) {
+  json points = json::array();
+  for (const CurvePoint& point : curve.points) points.push_back(json{{"x", point.x}, {"y", point.y}});
+  return points;
+}
+
+/**
+ * Reads one curve, sanitised on the way in.
+ *
+ * Anything that is not a list of finite points in the unit square is not a
+ * curve, and the engine should not be the place that finds that out three
+ * layers later - so the points are cleaned here, once, and everything
+ * downstream can assume they are sorted, spaced and inside the square.
+ */
+Curve CurveFromJson(const json& value) {
+  Curve curve;
+  if (!value.is_array()) return curve;
+  curve.points.reserve(value.size());
+  for (const json& entry : value) {
+    if (!entry.is_object()) continue;
+    curve.points.push_back({OptionalFloat(entry, "x", 0.0f), OptionalFloat(entry, "y", 0.0f)});
+  }
+  return Sanitise(curve);
+}
+
+json CurvesToJson(const Curves& curves) {
+  return json{{"rgb", CurveToJson(curves.rgb)},
+              {"red", CurveToJson(curves.red)},
+              {"green", CurveToJson(curves.green)},
+              {"blue", CurveToJson(curves.blue)}};
+}
+
+Curves CurvesFromJson(const json& value) {
+  const json& v = value.is_object() ? value : json::object();
+  Curves curves;
+  curves.rgb = CurveFromJson(v.contains("rgb") ? v.at("rgb") : json::array());
+  curves.red = CurveFromJson(v.contains("red") ? v.at("red") : json::array());
+  curves.green = CurveFromJson(v.contains("green") ? v.at("green") : json::array());
+  curves.blue = CurveFromJson(v.contains("blue") ? v.at("blue") : json::array());
+  return curves;
+}
+
+}  // namespace
+
 json AdjustmentsToJson(const Adjustments& a) {
   return json{{"exposure", a.exposure},     {"brightness", a.brightness},
               {"contrast", a.contrast},     {"highlights", a.highlights},
@@ -37,7 +81,8 @@ json AdjustmentsToJson(const Adjustments& a) {
               {"clarity", a.clarity},
               {"denoise", a.denoise},
               {"denoiseDetail", a.denoise_detail},
-              {"temperature", a.temperature}};
+              {"temperature", a.temperature},
+              {"curves", CurvesToJson(a.curves)}};
 }
 
 Adjustments AdjustmentsFromJson(const json& value) {
@@ -58,8 +103,11 @@ Adjustments AdjustmentsFromJson(const json& value) {
   a.denoise = std::clamp(OptionalFloat(v, "denoise", 0.0f), 0.0f, 100.0f);
   a.denoise_detail = std::clamp(OptionalFloat(v, "denoiseDetail", 50.0f), 0.0f, 100.0f);
   a.temperature = std::clamp(OptionalFloat(v, "temperature", 0.0f), -100.0f, 100.0f);
+  a.curves = CurvesFromJson(v.contains("curves") ? v.at("curves") : json::object());
   return a;
 }
+
+namespace {
 
 json MaskToJson(const Mask& mask) {
   return json{{"kind", MaskKindName(mask.kind)}, {"x", mask.x},         {"y", mask.y},

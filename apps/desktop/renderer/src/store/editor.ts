@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import type {
-  AdjustmentKey,
   Adjustments,
   BlendMode,
+  Curve,
+  CurveChannel,
+  SliderKey,
   Face,
   FillColor,
   FillKind,
@@ -237,7 +239,21 @@ interface EditorState {
    * Moves one slider. `continuing` is true for every frame of a drag after the
    * first, which is what makes the gesture a single undo step.
    */
-  setAdjustment(key: AdjustmentKey, value: number, continuing: boolean): Promise<void>;
+  setAdjustment(key: SliderKey, value: number, continuing: boolean): Promise<void>;
+
+  /**
+   * Sends a whole adjustment state, which is what both of the above end in.
+   *
+   * The engine takes the complete set rather than a delta, so a slider and a
+   * curve point are the same request with a different field filled in.
+   */
+  commitAdjustments(next: Adjustments, continuing: boolean): Promise<void>;
+
+  /**
+   * Replaces one of the four curves. `continuing` works as it does for a
+   * slider, so dragging a point is one undo step rather than one per frame.
+   */
+  setCurve(channel: CurveChannel, points: Curve, continuing: boolean): Promise<void>;
 
   /** The user's own presets. The built-in ones are a constant, not state. */
   /**
@@ -1231,14 +1247,27 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (removed.ok) set({ presets: removed.value });
   },
 
+  setCurve: async (channel, points, continuing) => {
+    const current = currentAdjustments(get());
+    const next: Adjustments = {
+      ...current,
+      curves: { ...current.curves, [channel]: points },
+    };
+    await get().commitAdjustments(next, continuing);
+  },
+
   setAdjustment: async (key, value, continuing) => {
+    const next: Adjustments = { ...currentAdjustments(get()), [key]: value };
+    await get().commitAdjustments(next, continuing);
+  },
+
+  commitAdjustments: async (next, continuing) => {
     const document = get().document;
     if (document === null) return;
 
-    const next: Adjustments = { ...currentAdjustments(get()), [key]: value };
     const layerId = get().selectedLayerId ?? undefined;
     // The panel reflects the move immediately; the engine confirms a moment
-    // later. Waiting for the round trip would make the slider feel tethered.
+    // later. Waiting for the round trip would make the control feel tethered.
     set({ pendingAdjustments: next });
     await adoptHistory(
       set,

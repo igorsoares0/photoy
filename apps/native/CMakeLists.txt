@@ -40,6 +40,7 @@ add_executable(photoy-engine
   src/image/orientation.cpp
 
   src/edit/adjustments.cpp
+  src/edit/curve.cpp
   src/edit/layer.cpp
   src/edit/mask.cpp
   src/edit/decontaminate.cpp

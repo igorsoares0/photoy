@@ -90,6 +90,22 @@ Mat3 HueRotation(float degrees, const float weights[3]) noexcept {
   return corrected;
 }
 
+/**
+ * Puts an encoded tone through a curve, headroom included.
+ *
+ * The curve is drawn on the unit square because that is the range a person can
+ * see and aim at, but the working space carries two stops above white. Rather
+ * than crush that headroom into the top of the curve, anything above white is
+ * moved by the same amount white itself moved: a highlight that was blown stays
+ * blown, and one that a recovery slider brings back down lands where the curve
+ * says white lands.
+ */
+float Bend(const CurveSpline& curve, float encoded) noexcept {
+  if (curve.identity()) return encoded;
+  if (encoded <= 1.0f) return curve.At(std::max(0.0f, encoded));
+  return encoded + (curve.At(1.0f) - 1.0f);
+}
+
 /// A deterministic hash, so the same render twice is the same picture.
 std::uint32_t Hash(std::uint32_t x, std::uint32_t y) noexcept {
   std::uint32_t h = x * 0x9E3779B1u ^ y * 0x85EBCA77u;
@@ -107,7 +123,7 @@ bool Adjustments::IsNeutral() const noexcept {
   return exposure == 0.0f && brightness == 0.0f && contrast == 0.0f && highlights == 0.0f &&
          shadows == 0.0f && saturation == 0.0f && vibrance == 0.0f && hue == 0.0f &&
          vignette == 0.0f && grain == 0.0f && sharpen == 0.0f && clarity == 0.0f &&
-         denoise == 0.0f && temperature == 0.0f;
+         denoise == 0.0f && temperature == 0.0f && curves.IsNeutral();
 }
 
 bool Adjustments::operator==(const Adjustments& other) const noexcept {
@@ -117,7 +133,7 @@ bool Adjustments::operator==(const Adjustments& other) const noexcept {
          vibrance == other.vibrance && hue == other.hue && vignette == other.vignette &&
          grain == other.grain && sharpen == other.sharpen && clarity == other.clarity &&
          denoise == other.denoise && denoise_detail == other.denoise_detail &&
-         temperature == other.temperature;
+         temperature == other.temperature && curves == other.curves;
 }
 
 CompiledAdjustments::CompiledAdjustments() = default;
@@ -167,8 +183,16 @@ CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments, int wid
   saturation_ = 1.0f + adjustments.saturation / 100.0f;
   vibrance_ = adjustments.vibrance / 100.0f;
 
+  const CurveSpline master(adjustments.curves.rgb);
+  const CurveSpline channels[3] = {CurveSpline(adjustments.curves.red),
+                                   CurveSpline(adjustments.curves.green),
+                                   CurveSpline(adjustments.curves.blue)};
+  const bool per_channel =
+      !channels[0].identity() || !channels[1].identity() || !channels[2].identity();
+
   tone_is_identity_ = adjustments.brightness == 0.0f && adjustments.contrast == 0.0f &&
-                      adjustments.highlights == 0.0f && adjustments.shadows == 0.0f;
+                      adjustments.highlights == 0.0f && adjustments.shadows == 0.0f &&
+                      master.identity() && !per_channel;
   if (tone_is_identity_) return;
 
   const float brightness = adjustments.brightness / 100.0f;
@@ -176,7 +200,12 @@ CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments, int wid
   const float highlights = adjustments.highlights / 100.0f;
   const float shadows = adjustments.shadows / 100.0f;
 
-  tone_.resize(kToneSize);
+  const int tables = per_channel ? 3 : 1;
+  if (per_channel) {
+    for (int c = 0; c < 3; ++c) channel_offset_[c] = c * kToneSize;
+  }
+
+  tone_.resize(static_cast<std::size_t>(tables) * kToneSize);
   for (int i = 0; i < kToneSize; ++i) {
     const float linear = kToneDomain * static_cast<float>(i) / (kToneSize - 1);
     float e = Encode(linear);
@@ -209,23 +238,32 @@ CompiledAdjustments::CompiledAdjustments(const Adjustments& adjustments, int wid
       e += 0.45f * shadows * weight * (shadows > 0.0f ? std::max(0.0f, 1.0f - e) : e);
     }
 
-    tone_[static_cast<std::size_t>(i)] = std::max(0.0f, Decode(std::max(0.0f, e)));
+    // The sliders shape the tones, then the curves do - and the master curve
+    // before the channel ones, which is the order documented on `Curves`.
+    e = Bend(master, e);
+
+    for (int table = 0; table < tables; ++table) {
+      const float bent = per_channel ? Bend(channels[table], e) : e;
+      tone_[static_cast<std::size_t>(table) * kToneSize + static_cast<std::size_t>(i)] =
+          std::max(0.0f, Decode(std::max(0.0f, bent)));
+    }
   }
 }
 
-float CompiledAdjustments::Tone(float value) const noexcept {
+float CompiledAdjustments::Tone(float value, int offset) const noexcept {
   if (tone_is_identity_) return value;
-  if (value <= 0.0f) return tone_.front();
+  const auto base = static_cast<std::size_t>(offset);
+  if (value <= 0.0f) return tone_[base];
   if (value >= kToneDomain) {
     // Past the table the response is held, which keeps a blown highlight blown
     // rather than folding it back down.
-    return tone_.back();
+    return tone_[base + kToneSize - 1];
   }
   const float position = value * (kToneSize - 1) / kToneDomain;
   const int index = static_cast<int>(position);
   const float fraction = position - static_cast<float>(index);
-  const float low = tone_[static_cast<std::size_t>(index)];
-  const float high = tone_[static_cast<std::size_t>(index) + 1];
+  const float low = tone_[base + static_cast<std::size_t>(index)];
+  const float high = tone_[base + static_cast<std::size_t>(index) + 1];
   return low + (high - low) * fraction;
 }
 
@@ -241,9 +279,9 @@ void CompiledAdjustments::Apply(float& r, float& g, float& b, int x, int y) cons
     b = nb;
   }
 
-  r = Tone(r);
-  g = Tone(g);
-  b = Tone(b);
+  r = Tone(r, channel_offset_[0]);
+  g = Tone(g, channel_offset_[1]);
+  b = Tone(b, channel_offset_[2]);
 
   if (saturation_ != 1.0f) {
     const float luma = luma_[0] * r + luma_[1] * g + luma_[2] * b;

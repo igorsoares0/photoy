@@ -1,4 +1,4 @@
-import type { AdjustmentKey, Adjustments, HistoryEntry } from '@photoy/types';
+import type { Adjustments, Curve, CurveChannel, HistoryEntry, SliderKey } from '@photoy/types';
 import { NEUTRAL_ADJUSTMENTS } from '@photoy/types';
 import { formatDimensions, formatInteger, formatSigned } from './format';
 
@@ -10,7 +10,7 @@ export interface HistoryRow {
   detail: string | null;
 }
 
-const ADJUSTMENT_LABELS: Record<AdjustmentKey, string> = {
+const ADJUSTMENT_LABELS: Record<SliderKey, string> = {
   exposure: 'Exposição',
   brightness: 'Brilho',
   contrast: 'Contraste',
@@ -27,6 +27,18 @@ const ADJUSTMENT_LABELS: Record<AdjustmentKey, string> = {
   denoiseDetail: 'Detalhe no ruído',
   temperature: 'Temperatura',
 };
+
+/** The curves are named by the channel they bend, which is how the panel labels them. */
+const CURVE_LABELS: Record<CurveChannel, string> = {
+  rgb: 'RGB',
+  red: 'vermelho',
+  green: 'verde',
+  blue: 'azul',
+};
+
+const sameCurve = (a: Curve, b: Curve): boolean =>
+  a.length === b.length &&
+  a.every((point, i) => point.x === (b[i]?.x ?? NaN) && point.y === (b[i]?.y ?? NaN));
 
 const MASK_LABELS: Record<string, string> = {
   none: 'Máscara removida',
@@ -46,14 +58,21 @@ function describeAdjustment(
   previous: Adjustments,
   next: Adjustments,
 ): { label: string; detail: string | null } {
-  const changed = (Object.keys(ADJUSTMENT_LABELS) as AdjustmentKey[]).filter(
+  const changed = (Object.keys(ADJUSTMENT_LABELS) as SliderKey[]).filter(
     (key) => Math.abs(next[key] - previous[key]) > 1e-6,
   );
+  const bent = (Object.keys(CURVE_LABELS) as CurveChannel[]).filter(
+    (channel) => !sameCurve(next.curves[channel], previous.curves[channel]),
+  );
 
-  if (changed.length === 0) return { label: 'Ajuste', detail: null };
-  if (changed.length > 1) return { label: 'Ajustes', detail: `${changed.length} controles` };
+  if (changed.length + bent.length === 0) return { label: 'Ajuste', detail: null };
+  if (changed.length + bent.length > 1) {
+    return { label: 'Ajustes', detail: `${changed.length + bent.length} controles` };
+  }
+  const channel = bent[0];
+  if (channel !== undefined) return { label: 'Curva', detail: CURVE_LABELS[channel] };
 
-  const key = changed[0] as AdjustmentKey;
+  const key = changed[0] as SliderKey;
   const value = next[key];
   return {
     label: ADJUSTMENT_LABELS[key],

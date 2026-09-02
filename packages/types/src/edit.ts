@@ -160,6 +160,41 @@ export interface Layer {
   mask: Mask;
 }
 
+/** Which of the four curves a point belongs to. */
+export type CurveChannel = 'rgb' | 'red' | 'green' | 'blue';
+
+/**
+ * One control point on a tone curve.
+ *
+ * Both coordinates run 0 to 1 and mean what they mean on screen: x is the tone
+ * that arrives, y is the tone that leaves. The domain is perceptual rather than
+ * linear light - a curve drawn against linear values would put almost the whole
+ * photograph in the first tenth of its width.
+ */
+export interface CurvePoint {
+  x: number;
+  y: number;
+}
+
+export type Curve = CurvePoint[];
+
+/**
+ * The four curves a photograph can carry.
+ *
+ * `rgb` is the tonal statement and the other three are the colour grade laid on
+ * top of it, which is also the order the engine applies them in. An empty list
+ * is the identity, so a document that has never seen the curve panel carries
+ * four empty lists and costs nothing.
+ */
+export interface Curves {
+  rgb: Curve;
+  red: Curve;
+  green: Curve;
+  blue: Curve;
+}
+
+export const IDENTITY_CURVES: Curves = { rgb: [], red: [], green: [], blue: [] };
+
 /**
  * The basic adjustment set. Every value is neutral at zero.
  *
@@ -197,9 +232,30 @@ export interface Adjustments {
   denoise: number;
   denoiseDetail: number;
   temperature: number;
+  /**
+   * The point curves, which are the one adjustment that is not a number.
+   *
+   * They live here rather than in an operation of their own because a curve is
+   * an adjustment: it belongs to a layer, it goes into a preset, and it has to
+   * travel in the same entry as the sliders so that the last entry is still the
+   * whole state.
+   */
+  curves: Curves;
 }
 
 export type AdjustmentKey = keyof Adjustments;
+
+/**
+ * The adjustments a slider can move, which is all of them but the curves.
+ *
+ * Panels, history labels and presets all do arithmetic on adjustment values, so
+ * they are typed against this rather than against every key - which is what
+ * makes adding another non-numeric adjustment a compile error rather than a
+ * subtraction that quietly returns NaN.
+ */
+export type SliderKey = {
+  [K in keyof Adjustments]: Adjustments[K] extends number ? K : never;
+}[keyof Adjustments];
 
 export const NEUTRAL_ADJUSTMENTS: Adjustments = {
   exposure: 0,
@@ -219,6 +275,7 @@ export const NEUTRAL_ADJUSTMENTS: Adjustments = {
   // why a fresh document is still neutral despite this not being zero.
   denoiseDetail: 50,
   temperature: 0,
+  curves: IDENTITY_CURVES,
 };
 
 /** A rectangle in pixel coordinates, half-open on the right and bottom. */

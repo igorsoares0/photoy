@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "color/matrix.h"
+#include "edit/curve.h"
 
 namespace photoy {
 
@@ -52,6 +53,16 @@ struct Adjustments {
   float denoise_detail = 50.0f;  // 0 .. 100
   /// Warmer above zero, cooler below.
   float temperature = 0.0f;  // -100 .. 100
+  /**
+   * The point curves: one for tone and one for each channel.
+   *
+   * These are the only adjustment that is not a single number, and they are
+   * here rather than in an operation of their own because a curve is an
+   * adjustment - it belongs to a layer, it goes into a preset, and it has to
+   * arrive in the same entry as the sliders so that the last entry is still the
+   * whole state.
+   */
+  Curves curves;
 
   bool IsNeutral() const noexcept;
   bool operator==(const Adjustments& other) const noexcept;
@@ -88,15 +99,25 @@ class CompiledAdjustments {
   void Apply(float& r, float& g, float& b, int x, int y) const noexcept;
 
  private:
-  float Tone(float value) const noexcept;
+  float Tone(float value, int offset) const noexcept;
 
   bool neutral_ = true;
   /// Exposure and white balance folded together.
   float premultiply_[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
   bool premultiply_is_identity_ = true;
-  /// Linear-in, linear-out tone response.
+  /// Linear-in, linear-out tone response. One table, or three when the
+  /// per-channel curves disagree.
   std::vector<float> tone_;
   bool tone_is_identity_ = true;
+  /**
+   * Where each channel's table starts inside `tone_`.
+   *
+   * All three are zero while the per-channel curves are identity, which is the
+   * usual case and shares one table between them. As soon as one of them bends,
+   * three tables are built and these separate. Holding it as an offset rather
+   * than a flag keeps the inner loop free of a branch.
+   */
+  int channel_offset_[3] = {0, 0, 0};
   float saturation_ = 1.0f;
   float vibrance_ = 0.0f;
   float vignette_ = 0.0f;

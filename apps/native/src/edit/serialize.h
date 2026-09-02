@@ -23,4 +23,14 @@ Operation FromJson(const nlohmann::json& value);
 nlohmann::json ToJson(const std::vector<Operation>& operations);
 std::vector<Operation> OperationsFromJson(const nlohmann::json& value);
 
+/**
+ * The wire form of the adjustment set on its own.
+ *
+ * Exported because the engine describes a layer's adjustments as well as
+ * serialising the operation that set them, and two hand-written copies of the
+ * same object drift the moment a control is added to one of them.
+ */
+nlohmann::json AdjustmentsToJson(const Adjustments& adjustments);
+Adjustments AdjustmentsFromJson(const nlohmann::json& value);
+
 }  // namespace photoy

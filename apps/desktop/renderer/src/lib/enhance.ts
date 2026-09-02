@@ -1,4 +1,4 @@
-import type { Adjustments, ImageAnalysis } from '@photoy/types';
+import type { Adjustments, ImageAnalysis, SliderKey } from '@photoy/types';
 
 /**
  * Turning a measurement into a proposal.
@@ -16,8 +16,14 @@ export type SuggestionId = 'light' | 'shadows' | 'highlights' | 'contrast' | 'ca
 
 export interface Suggestion {
   id: SuggestionId;
-  /** What ticking it would add to the adjustments already in effect. */
-  delta: Partial<Adjustments>;
+  /**
+   * What ticking it would add to the adjustments already in effect.
+   *
+   * Sliders only. A proposal is a number to be added to a number, and the
+   * curves are neither - suggesting a shape would be a different feature, and
+   * one the engine has no way to measure a need for.
+   */
+  delta: Partial<Record<SliderKey, number>>;
   /** The measurement that produced it, for the panel to show. */
   measure: number;
 }
@@ -180,7 +186,7 @@ export function applySuggestions(
   for (const suggestion of suggestions) {
     if (!chosen.has(suggestion.id)) continue;
     for (const [key, value] of Object.entries(suggestion.delta)) {
-      const field = key as keyof Adjustments;
+      const field = key as SliderKey;
       // Added to what is there rather than replacing it: the proposal is an
       // improvement on the picture as it stands, not a verdict on it.
       result[field] = result[field] + (value ?? 0);

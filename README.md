@@ -184,8 +184,8 @@ hoje:
 - **A borda continua sendo contorno, não fios.** Os níveis e a descontaminação arrumam a
   cor e a extensão do halo, mas nenhum dos dois recupera fio de cabelo: para isso é preciso
   matting de verdade, que olha a fotografia e não só a máscara.
-- **Aumentar usa bilinear**, que interpola mas não inventa nitidez. Um aumento grande fica
-  macio, e é assim que deve ficar: o upscale que reconstrói detalhe é o item de IA do M5.
+- **Aumentar usa Lanczos-3**, que reconstrói o sinal entre as amostras mas não inventa
+  detalhe que não foi registrado. Um aumento grande fica macio, e é assim que deve ficar.
 - **Um resize que reduz um eixo e aumenta o outro alia o eixo reduzido**, porque nesse caso
   os dois passam pela bilinear. É um resize deliberadamente distorcido; separar o filtro por
   eixo resolveria, e ainda não pagou o próprio custo.
@@ -202,6 +202,12 @@ hoje:
 - **A estimativa de abertura é um chute com piso**, porque o tamanho real só se conhece
   depois de ler o cabeçalho. Erra para cima de propósito: um job que superestima espera um
   pouco mais pela vez dele, um que subestima é admitido junto de outro e falta memória.
+- **A tabela de tons é amostrada em luz linear**, então as sombras profundas têm poucas
+  entradas: os primeiros níveis de saída dividem um punhado delas. Uma curva de inclinação
+  normal não percebe — abaixo de 0,7 nível de erro — mas uma que sobe nove vezes no primeiro
+  vigésimo erra 6,4 níveis na entrada 1 e 2,3 acima da entrada 8. Amostrar a tabela no
+  domínio perceptual custaria um `pow` por pixel por canal; densificar só a base é a saída
+  barata, e ainda não pagou o próprio custo.
 
 ### O histórico
 
@@ -214,6 +220,80 @@ existir.
 o estado inteiro dos controles, e não um delta — é isso que a torna replayável —
 então o painel recupera o que mudou comparando com o estado anterior *da mesma
 camada*. Um histórico que diz "ajustado" sem dizer quanto não é auditável.
+
+### Curvas
+
+A §9 pede curvas entre os ajustes avançados, e elas são o controle que separa
+quem já editou foto de quem só mexeu em slider. Entraram como ponto de controle
+com interpolação, quatro canais, e **sem uma passada nova no laço por pixel**.
+
+**A interpolação é a cúbica monótona de Fritsch-Carlson.** Uma spline cúbica
+comum passa pelos mesmos pontos e ultrapassa entre eles: uma curva desenhada
+para abrir as sombras também escurece alguma coisa logo acima delas. Numa
+fotografia isso aparece como uma faixa escura dentro de uma área clara, sem
+causa visível para quem desenhou a curva. A forma monótona abre mão da
+suavidade extra em troca de nunca inverter — se os pontos sobem, tudo entre eles
+sobe. O limitador está testado por mutação: desligando o clamp, dois testes
+falham.
+
+**A curva se dobra na tabela de tons que já existia.** Brilho, contraste,
+realces e sombras já compilavam para uma tabela de 4096 entradas; a curva mestre
+é mais uma função de uma variável na mesma cadeia, então o custo por pixel é
+exatamente zero a mais. As curvas por canal são o único caso que precisa de três
+tabelas em vez de uma, e elas só existem quando algum canal está curvado — o
+laço lê um offset por canal em vez de testar uma flag.
+
+**O domínio é perceptual, não luz linear.** Uma curva desenhada contra valores
+lineares põe quase a foto inteira no primeiro décimo da largura, e ninguém mira
+nisso. O quadrado da tela é a curva sRGB do espaço de trabalho, que para um
+cinza neutro é literalmente o byte que sai: um ponto em (0,5, 0,75) leva o cinza
+128 para 191, e o teste cobra esse número.
+
+**Acima do branco a curva não fecha o headroom.** O espaço de trabalho carrega
+dois stops acima do branco, e espremer isso no topo do quadrado apagaria a
+recuperação de realces. O que se aplica acima de 1 é o mesmo deslocamento que o
+branco sofreu: um realce estourado continua estourado, e um que a recuperação
+trouxer de volta chega onde a curva disse que o branco chega.
+
+**A mestre roda antes das de canal.** A mestre é a afirmação tonal e as outras
+três são a coloração por cima dela; nessa ordem um preto levantado e tingido fica
+onde foi posto, enquanto na outra a curva tonal arrastaria o tingimento junto. É
+decisão, não acaso, então tem teste — e o teste falha quando a ordem é trocada
+no C++.
+
+**As curvas de canal agem no espaço de trabalho, e isso se sente.** As primárias
+do ProPhoto são muito mais largas que qualquer tela, então levantar o vermelho
+de lá também empurra os outros dois na volta para sRGB: medido nesta fixture, o
+cinza 128 vira **237, 106, 127** — bem mais saturado que o 191, 128, 128 que um
+mesmo gesto daria num editor que trabalha em sRGB. É consequência, não bug, e é
+a mesma que saturação, matiz e temperatura já têm aqui — todas agem no espaço de
+trabalho. A alternativa seria aplicar as curvas de canal no espaço de saída, o
+que faria o render depender do perfil escolhido na exportação: um preço alto
+demais por um gesto mais previsível.
+
+**A matemática existe duas vezes, e um teste amarra as duas.** O engine é quem
+renderiza, mas o painel precisa desenhar a mesma forma, e pedir amostras ao
+engine a cada movimento do mouse não é troca que alguém faça. Então
+`edit/curve.cpp` e `lib/curves.ts` carregam a mesma spline, e o teste renderiza
+uma rampa neutra de 256 níveis pelo engine e compara nível a nível com o que o
+painel desenharia: **menos de 1 nível de diferença** acima da entrada 8, e a
+diferença abaixo disso é a resolução da tabela, medida e anotada acima.
+
+**Uma curva sem curva é uma lista vazia.** Pontos exatamente sobre a diagonal
+contam como identidade — uma spline monótona por pontos colineares é a reta —, e
+tirar o último ponto devolve a lista vazia em vez de duas pontas que não fazem
+nada. É o que mantém o documento neutro, que é o que deixa o renderer pular a
+passada inteira. O painel mostra as duas pontas mesmo assim: elas são os pontos
+de preto e de branco, e defini-los é metade do que uma curva serve.
+
+**O saneamento é do engine, e o painel repete.** Pontos chegam fora de ordem,
+fora do quadrado, empilhados no mesmo x e em quantidade maior que o limite; o
+engine ordena, corta no quadrado, descarta o que estiver a menos de 1/255 do
+anterior e completa as pontas. O painel faz o mesmo antes de desenhar — se a
+limpeza só acontecesse na entrada do engine, a curva na tela seria uma forma
+diferente da curva na fotografia. São 16 pontos no máximo, dois deles reservados
+para as pontas: dar as pontas para o décimo quinto e o décimo sexto ponto que
+alguém soltou deixaria a curva indefinida exatamente onde estão os realces.
 
 ### HEIC, sem embarcar um decodificador
 

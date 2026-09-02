@@ -1,7 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import type { Adjustments, Preset, PresetCategory } from '@photoy/types';
-import { NEUTRAL_ADJUSTMENTS, PRESET_CATEGORIES } from '@photoy/types';
+import type {
+  Adjustments,
+  Curve,
+  CurveChannel,
+  CurvePoint,
+  Curves,
+  Preset,
+  PresetCategory,
+} from '@photoy/types';
+import { IDENTITY_CURVES, NEUTRAL_ADJUSTMENTS, PRESET_CATEGORIES } from '@photoy/types';
 
 /**
  * The application's own structured data: presets, recent files, settings.
@@ -48,16 +56,51 @@ function asCategory(value: string): PresetCategory {
     : 'colour';
 }
 
+/**
+ * The four curves out of a stored preset.
+ *
+ * Only the shape is checked here, not the spacing or the ordering: the engine
+ * sanitises every curve it is given, so a preset saved by an older build - or
+ * edited by hand - is cleaned when it is applied rather than twice.
+ */
+function readCurves(value: unknown): Curves {
+  if (value === null || typeof value !== 'object') return IDENTITY_CURVES;
+  const stored = value as Record<string, unknown>;
+  const channel = (name: CurveChannel): Curve => {
+    const points = stored[name];
+    if (!Array.isArray(points)) return [];
+    return points
+      .filter(
+        (point): point is CurvePoint =>
+          point !== null &&
+          typeof point === 'object' &&
+          Number.isFinite((point as CurvePoint).x) &&
+          Number.isFinite((point as CurvePoint).y),
+      )
+      .map((point) => ({ x: point.x, y: point.y }));
+  };
+  return {
+    rgb: channel('rgb'),
+    red: channel('red'),
+    green: channel('green'),
+    blue: channel('blue'),
+  };
+}
+
 /** A stored preset arrives as text, so every field is checked on the way out. */
 function readAdjustments(text: string): Adjustments {
   try {
     const parsed: unknown = JSON.parse(text);
     if (parsed === null || typeof parsed !== 'object') return NEUTRAL_ADJUSTMENTS;
+    const stored = parsed as Record<string, unknown>;
     const result = { ...NEUTRAL_ADJUSTMENTS };
     for (const key of Object.keys(NEUTRAL_ADJUSTMENTS) as Array<keyof Adjustments>) {
-      const value = (parsed as Record<string, unknown>)[key];
-      if (typeof value === 'number' && Number.isFinite(value)) result[key] = value;
+      const value = stored[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        (result as Record<string, unknown>)[key] = value;
+      }
     }
+    result.curves = readCurves(stored.curves);
     return result;
   } catch {
     // A preset that cannot be read is a preset that does nothing, which is

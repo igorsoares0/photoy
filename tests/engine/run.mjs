@@ -3,6 +3,7 @@ import { run as runPipeline } from './smoke.mjs';
 import { run as runColour } from './color.mjs';
 import { run as runEdits } from './edits.mjs';
 import { run as runAdjustments } from './adjustments.mjs';
+import { run as runCurves } from './curves.mjs';
 import { run as runJobs } from './jobs.mjs';
 import { run as runLayers } from './layers.mjs';
 import { run as runProjects } from './project.mjs';
@@ -21,6 +22,7 @@ import { run as runDatabase } from '../desktop/database.mjs';
 import { run as runPaths } from '../desktop/paths.mjs';
 import { run as runEnhance } from '../renderer/enhance.mjs';
 import { run as runPortrait } from '../renderer/portrait.mjs';
+import { run as runCurveMaths } from '../renderer/curves.mjs';
 
 /**
  * Runs the engine suites against the real binary over the real protocol, plus
@@ -32,7 +34,7 @@ import { run as runPortrait } from '../renderer/portrait.mjs';
 generateFixtures();
 
 let failures = 0;
-for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runRaw, runHeic, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase, runPaths, runEnhance, runPortrait]) {
+for (const suite of [runPipeline, runColour, runEdits, runAdjustments, runCurves, runLayers, runMasks, runAi, runBackground, runResize, runBrush, runInpaint, runRaw, runHeic, runProjects, runJobs, runGeometry, runPreviewSizing, runBrushGeometry, runDatabase, runPaths, runEnhance, runPortrait, runCurveMaths]) {
   failures += await suite();
 }
 

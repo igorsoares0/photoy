@@ -138,6 +138,11 @@ export function generateFixtures() {
   );
 
   writePng('gradient.png', 200, 120, GRADIENT);
+  // A neutral ramp, every level once. Neutral is the point: a grey survives the
+  // trip to the working space and back unchanged, so what comes out of one of
+  // these pixels is the tone response itself rather than the tone response
+  // mixed with a gamut conversion.
+  writePng('ramp.png', 256, 8, (x) => [x, x, x, 255]);
   // Opaque on the left, fully transparent on the right, to catch colour
   // bleeding across the alpha edge during a downscale.
   writePng('alpha.png', 100, 60, (x) => [255, 80, 0, x < 50 ? 255 : 0]);

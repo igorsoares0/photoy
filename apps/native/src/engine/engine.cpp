@@ -47,21 +47,6 @@ using json_util::OptionalInt;
 using json_util::RequireInt;
 using json_util::RequireString;
 
-json DescribeAdjustments(const Adjustments& a) {
-  return json{{"exposure", a.exposure},     {"brightness", a.brightness},
-              {"contrast", a.contrast},     {"highlights", a.highlights},
-              {"shadows", a.shadows},       {"saturation", a.saturation},
-              {"vibrance", a.vibrance},
-              {"hue", a.hue},
-              {"vignette", a.vignette},
-              {"grain", a.grain},
-              {"sharpen", a.sharpen},
-              {"clarity", a.clarity},
-              {"denoise", a.denoise},
-              {"denoiseDetail", a.denoise_detail},
-              {"temperature", a.temperature}};
-}
-
 json DescribeModels(const ai::ModelManager& models) {
   json listed = json::array();
   for (const ai::ModelInfo& model : models.List()) {
@@ -90,7 +75,7 @@ json DescribeLayer(const Layer& layer) {
               {"patch", layer.patch},
               {"patchWidth", layer.patch_width},
               {"patchHeight", layer.patch_height},
-              {"adjustments", DescribeAdjustments(layer.adjustments)},
+              {"adjustments", AdjustmentsToJson(layer.adjustments)},
               {"mask",
                json{{"kind", MaskKindName(layer.mask.kind)},
                     {"x", layer.mask.x},
@@ -146,7 +131,7 @@ json DescribeHistory(const Document& document) {
   return json{{"documentId", document.id},
               {"entries", std::move(entries)},
               {"layers", std::move(layers)},
-              {"adjustments", DescribeAdjustments(FoldAdjustments(active))},
+              {"adjustments", AdjustmentsToJson(FoldAdjustments(active))},
               // Reported like the adjustments and for the same reason: the
               // controls read their position from here, so undo moves them.
               {"raw", DescribeRawSettings(FoldRawSettings(active), document.raw)},
